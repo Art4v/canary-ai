@@ -1,6 +1,15 @@
+import SkyBackground from './features/sky/SkyBackground.jsx'
+import ThemeToggle from './components/ThemeToggle.jsx'
+
 function App() {
   return (
-    <div>Canary AI</div>
+    <>
+      <SkyBackground />
+      <ThemeToggle />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        Canary AI
+      </div>
+    </>
   )
 }
 
