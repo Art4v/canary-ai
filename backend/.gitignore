@@ -1,0 +1,11 @@
+# Environment variables (contains API keys)
+.env
+
+# Runtime data directories (recreated on server start)
+stock_training_data/
+news/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
