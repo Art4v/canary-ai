@@ -12,6 +12,7 @@
   --color-cloud: #ffffff;
   --color-cloud-shadow: rgba(0, 0, 0, 0.05);
   --cloud-opacity-scale: 1;
+  --bird-opacity-scale: 1;
 
   /* Shadows */
   --shadow-card: 0 16px 50px rgba(0, 0, 0, 0.14);
@@ -53,4 +54,5 @@ body.night {
   --color-border: #2a3a5a;
   --color-accent: #6a7ec4;
   --cloud-opacity-scale: 0.6;
+  --bird-opacity-scale: 0;
 }
