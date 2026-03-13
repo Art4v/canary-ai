@@ -1,110 +1,115 @@
 """
 FastAPI backend for Canary AI.
 
-Provides a health-check endpoint, live stock-tracking endpoints, and
-a general-news tracking endpoint powered by Finnhub.
-Stock data is fetched via yfinance every 10 seconds and persisted
-to per-ticker CSV files in the "stock_training_data/" directory.
-News articles are fetched via the Finnhub REST API every 10 seconds
-and appended to "news/news.csv".
-Both data directories are wiped on every server startup.
+Provides live stock-tracking endpoints (yfinance) and a general-news
+tracking endpoint (Finnhub). Both data sources are polled every 10
+seconds and persisted to CSV files that are wiped on every server startup.
 """
 
 from fastapi import FastAPI, HTTPException
+from datetime import datetime, timedelta, timezone
 import yfinance as yf
 import asyncio
 import csv
 import os
 import shutil
 import requests
-from datetime import datetime
 from dotenv import load_dotenv
 
-# Load environment variables from .env (contains FINNHUB_API_KEY).
 load_dotenv()
 
 app = FastAPI()
 
-# ── State ────────────────────────────────────────────────────────────────────
-# Maps uppercase ticker symbol → running asyncio.Task that periodically
-# fetches data from yfinance and appends it to the ticker's CSV file.
-tracking_tasks: dict[str, asyncio.Task] = {}
+# ── Configuration ─────────────────────────────────────────────────────────────
 
-# Directory where per-ticker CSV files are stored.
-# Located alongside this file: backend/stock_training_data/
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_training_data")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STOCK_DATA_DIR = os.path.join(BASE_DIR, "stock_training_data")
+NEWS_DIR = os.path.join(BASE_DIR, "news")
 
-# Directory where the general news CSV is stored.
-NEWS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "news")
-
-# Finnhub API key loaded from .env — required for the /news endpoints.
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
-
-# Base URL for the Finnhub general news endpoint.
 FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news"
 
-# The background task for news tracking (None when not tracking).
-news_task: asyncio.Task | None = None
+# Shared by both the stock and news polling loops.
+POLL_INTERVAL_SECONDS = 60
 
-# Set of Finnhub article IDs already written to the CSV, used to
-# deduplicate across polling cycles so the same article isn't stored twice.
-seen_news_ids: set[int] = set()
+# Shift the app's clock N hours into the past so yfinance returns data from
+# that earlier window and Finnhub news is filtered to exclude articles
+# published after the simulated time.  When 0 or unset, behaviour is
+# identical to real-time.
+TIME_REWIND_HOURS = float(os.getenv("TIME_REWIND_HOURS", "0"))
 
-# Column headers for news.csv — mirrors the fields returned by
-# Finnhub's /news endpoint.
 NEWS_CSV_COLUMNS = [
     "id", "category", "datetime", "headline",
     "source", "summary", "url", "image", "related",
 ]
 
+# ── Time simulation ──────────────────────────────────────────────────────────
 
-# ── Background task ─────────────────────────────────────────────────────────
+def _simulated_now() -> datetime:
+    """
+    Return the current UTC-aware datetime offset by TIME_REWIND_HOURS.
+
+    When TIME_REWIND_HOURS is 0 (the default), the returned value equals
+    the real wall-clock time — timedelta(hours=0) is a no-op.
+    """
+    return datetime.now(timezone.utc) - timedelta(hours=TIME_REWIND_HOURS)
+
+
+# ── State ─────────────────────────────────────────────────────────────────────
+
+# Active background tasks keyed by uppercase ticker symbol.
+stock_tasks: dict[str, asyncio.Task] = {}
+
+news_task: asyncio.Task | None = None
+
+# Tracks Finnhub article IDs already persisted so duplicate articles
+# across polling cycles are never written twice.
+seen_news_ids: set[int] = set()
+
+
+# ── Stock tracking ────────────────────────────────────────────────────────────
 
 async def _track_ticker(ticker: str) -> None:
     """
-    Long-running async task that fetches the latest 1-minute candle for
-    *ticker* every 10 seconds and appends it to a CSV file.
-
-    On first invocation the CSV is back-filled with ~2 days of 1-minute
-    historical candles so that downstream consumers have immediate data.
-    After the backfill, the function enters a polling loop that appends
-    the most recent candle every 10 seconds.
+    Background task that back-fills ~2 days of 1-minute candle history
+    from yfinance, then polls for the latest candle every
+    POLL_INTERVAL_SECONDS and appends it to the ticker's CSV file.
 
     Parameters
     ----------
     ticker : str
         Uppercase ticker symbol (e.g. "AAPL").
 
-    The task runs until cancelled (via DELETE /track/{ticker} or shutdown).
+    Runs until cancelled (via DELETE /track/{ticker} or shutdown).
     """
-    # Ensure the data directory exists (no-op if already present).
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(STOCK_DATA_DIR, exist_ok=True)
+    csv_path = os.path.join(STOCK_DATA_DIR, f"{ticker}.csv")
 
-    csv_path = os.path.join(DATA_DIR, f"{ticker}.csv")
-
-    # If the CSV doesn't exist yet, create it with a header row.
     if not os.path.exists(csv_path):
         with open(csv_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
+            csv.writer(f).writerow(["timestamp", "open", "high", "low", "close", "volume"])
 
-    # ── Backlog: pre-populate with 2 days of 1-minute historical candles ──
-    # This gives the CSV an immediate history so downstream consumers
-    # (charts, ML models, etc.) have data to work with right away,
-    # instead of waiting for the 10-second polling loop to accumulate rows.
+    # ── Backlog ──────────────────────────────────────────────────────
+    # Pre-populate the CSV so downstream consumers (charts, ML models)
+    # have data to work with immediately instead of waiting for the
+    # polling loop to accumulate rows one-by-one.
+    # Uses explicit start/end so that TIME_REWIND_HOURS shifts the
+    # window into the past (when 0, start/end match the real-time
+    # "2d" window).
     loop = asyncio.get_running_loop()
+    sim_now = _simulated_now()
+    backlog_start = sim_now - timedelta(days=2)
     backlog_df = await loop.run_in_executor(
         None,
-        lambda: yf.Ticker(ticker).history(period="2d", interval="1m"),
+        lambda: yf.Ticker(ticker).history(start=backlog_start, end=sim_now, interval="1m"),
     )
 
     if backlog_df is not None and not backlog_df.empty:
         with open(csv_path, "a", newline="") as f:
             writer = csv.writer(f)
-            # Write every historical row — each row is one 1-minute candle.
             for idx, row in backlog_df.iterrows():
                 writer.writerow([
-                    str(idx),       # pandas Timestamp → string
+                    str(idx),  # pandas Timestamp → string
                     row["Open"],
                     row["High"],
                     row["Low"],
@@ -112,43 +117,42 @@ async def _track_ticker(ticker: str) -> None:
                     row["Volume"],
                 ])
 
-    # ── Live polling loop ──────────────────────────────────────────────
+    # ── Live polling loop ────────────────────────────────────────────
     try:
         while True:
-            # yfinance is synchronous — run it in a thread executor so we
-            # don't block the event loop while the HTTP request completes.
+            # yfinance is synchronous — offload to a thread so the
+            # event loop stays responsive.
+            # Recompute simulated now each cycle so the window stays
+            # anchored to the rewound clock.
             loop = asyncio.get_running_loop()
+            sim_now = _simulated_now()
+            poll_start = sim_now - timedelta(days=1)
             df = await loop.run_in_executor(
                 None,
-                lambda: yf.Ticker(ticker).history(period="1d", interval="1m"),
+                lambda: yf.Ticker(ticker).history(start=poll_start, end=sim_now, interval="1m"),
             )
 
-            # If the DataFrame has data, take the most recent candle and
-            # append it as a new row in the CSV.
             if df is not None and not df.empty:
-                last = df.iloc[-1]  # most recent 1-min candle
-                candle_timestamp = str(df.index[-1])  # pandas Timestamp → str
+                latest_candle = df.iloc[-1]
+                candle_timestamp = str(df.index[-1])  # pandas Timestamp → string
 
                 with open(csv_path, "a", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerow([
+                    csv.writer(f).writerow([
                         candle_timestamp,
-                        last["Open"],
-                        last["High"],
-                        last["Low"],
-                        last["Close"],
-                        last["Volume"],
+                        latest_candle["Open"],
+                        latest_candle["High"],
+                        latest_candle["Low"],
+                        latest_candle["Close"],
+                        latest_candle["Volume"],
                     ])
 
-            # Wait 10 seconds before fetching again.
-            await asyncio.sleep(10)
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
     except asyncio.CancelledError:
-        # Graceful exit when the task is cancelled (DELETE or shutdown).
         pass
 
 
-# ── News background task ───────────────────────────────────────────────────
+# ── News tracking ─────────────────────────────────────────────────────────────
 
 def _fetch_finnhub_news() -> list[dict]:
     """
@@ -157,8 +161,8 @@ def _fetch_finnhub_news() -> list[dict]:
     Returns
     -------
     list[dict]
-        A list of article dicts, each containing the keys listed in
-        NEWS_CSV_COLUMNS. Returns an empty list on any request failure.
+        Article dicts whose keys match NEWS_CSV_COLUMNS.
+        Returns an empty list on any request failure.
     """
     try:
         resp = requests.get(
@@ -174,35 +178,39 @@ def _fetch_finnhub_news() -> list[dict]:
 
 async def _track_news() -> None:
     """
-    Long-running async task that polls Finnhub for general market news
-    every 10 seconds and appends new articles to news/news.csv.
+    Background task that polls Finnhub for general market news every
+    POLL_INTERVAL_SECONDS and appends new articles to news/news.csv.
 
-    Each article is deduplicated by its Finnhub-assigned ``id`` so that
+    Articles are deduplicated by their Finnhub-assigned ``id`` so that
     repeated polling cycles never write the same article twice.
 
-    The task runs until cancelled (via DELETE /news or shutdown).
+    Runs until cancelled (via DELETE /news or shutdown).
     """
-    global seen_news_ids
-
-    # Ensure the news directory and CSV exist.
     os.makedirs(NEWS_DIR, exist_ok=True)
     csv_path = os.path.join(NEWS_DIR, "news.csv")
 
-    # Create the CSV with a header row if it doesn't already exist.
     if not os.path.exists(csv_path):
         with open(csv_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(NEWS_CSV_COLUMNS)
+            csv.writer(f).writerow(NEWS_CSV_COLUMNS)
 
     try:
         while True:
-            # requests is synchronous — run in a thread executor to
-            # avoid blocking the event loop.
+            # requests is synchronous — offload to a thread so the
+            # event loop stays responsive.
             loop = asyncio.get_running_loop()
             articles = await loop.run_in_executor(None, _fetch_finnhub_news)
 
-            # Filter out articles we've already written.
-            new_articles = [a for a in articles if a.get("id") not in seen_news_ids]
+            # Filter out articles already seen AND articles published after
+            # the simulated time.  Finnhub's general-news API has no
+            # server-side date-range param, so filtering is client-side.
+            # When TIME_REWIND_HOURS=0, cutoff equals real now and every
+            # returned article passes the timestamp check.
+            sim_cutoff = _simulated_now().timestamp()
+            new_articles = [
+                a for a in articles
+                if a.get("id") not in seen_news_ids
+                and a.get("datetime", 0) <= sim_cutoff
+            ]
 
             if new_articles:
                 with open(csv_path, "a", newline="") as f:
@@ -219,18 +227,15 @@ async def _track_news() -> None:
                             article.get("image", ""),
                             article.get("related", ""),
                         ])
-                        # Mark this article as seen so future cycles skip it.
                         seen_news_ids.add(article.get("id"))
 
-            # Wait 10 seconds before polling again.
-            await asyncio.sleep(10)
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
     except asyncio.CancelledError:
-        # Graceful exit when the task is cancelled.
         pass
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+# ── Stock endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/")
 def health_check():
@@ -246,18 +251,17 @@ async def start_tracking(ticker: str):
     Parameters
     ----------
     ticker : str
-        Stock ticker symbol (case-insensitive; normalized to uppercase).
+        Stock ticker symbol (case-insensitive; normalised to uppercase).
 
     Returns 200 on success or 409 if the ticker is already being tracked.
     """
     ticker = ticker.upper()
 
-    if ticker in tracking_tasks:
+    if ticker in stock_tasks:
         raise HTTPException(status_code=409, detail=f"{ticker} is already being tracked")
 
-    # Spawn a background asyncio task that will run until cancelled.
     task = asyncio.create_task(_track_ticker(ticker))
-    tracking_tasks[ticker] = task
+    stock_tasks[ticker] = task
 
     return {"message": f"Started tracking {ticker}"}
 
@@ -270,18 +274,17 @@ async def stop_tracking(ticker: str):
     Parameters
     ----------
     ticker : str
-        Stock ticker symbol (case-insensitive; normalized to uppercase).
+        Stock ticker symbol (case-insensitive; normalised to uppercase).
 
     Returns 200 on success or 404 if the ticker is not currently tracked.
     """
     ticker = ticker.upper()
 
-    if ticker not in tracking_tasks:
+    if ticker not in stock_tasks:
         raise HTTPException(status_code=404, detail=f"{ticker} is not being tracked")
 
-    # Cancel the running background task and remove it from state.
-    tracking_tasks[ticker].cancel()
-    del tracking_tasks[ticker]
+    stock_tasks[ticker].cancel()
+    del stock_tasks[ticker]
 
     return {"message": f"Stopped tracking {ticker}"}
 
@@ -294,7 +297,7 @@ def list_tracked():
     Returns a JSON object with a single key "tracked" whose value is a
     sorted list of uppercase ticker strings.
     """
-    return {"tracked": sorted(tracking_tasks.keys())}
+    return {"tracked": sorted(stock_tasks.keys())}
 
 
 # ── News endpoints ────────────────────────────────────────────────────────────
@@ -305,14 +308,13 @@ async def start_news_tracking():
     Start tracking general market news from Finnhub.
 
     Launches a background task that polls the Finnhub general-news API
-    every 10 seconds and appends new articles to news/news.csv.
+    every POLL_INTERVAL_SECONDS and appends new articles to news/news.csv.
 
     Returns 200 on success, 409 if news is already being tracked, or
     400 if the FINNHUB_API_KEY environment variable is not set.
     """
     global news_task
 
-    # Guard: make sure an API key is configured.
     if not FINNHUB_API_KEY or FINNHUB_API_KEY == "your_finnhub_api_key_here":
         raise HTTPException(
             status_code=400,
@@ -322,7 +324,6 @@ async def start_news_tracking():
     if news_task is not None:
         raise HTTPException(status_code=409, detail="News is already being tracked")
 
-    # Spawn the background task.
     news_task = asyncio.create_task(_track_news())
 
     return {"message": "Started tracking news"}
@@ -342,53 +343,52 @@ async def stop_news_tracking():
     if news_task is None:
         raise HTTPException(status_code=404, detail="News is not being tracked")
 
-    # Cancel the task and clear state.
     news_task.cancel()
     news_task = None
 
     return {"message": "Stopped tracking news"}
 
 
-# ── Lifecycle ────────────────────────────────────────────────────────────────
+# ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
-    """Wipe all stock and news data from previous runs so each server start is fresh."""
-    # Wipe and recreate the stock data directory.
-    if os.path.exists(DATA_DIR):
-        shutil.rmtree(DATA_DIR)
-    os.makedirs(DATA_DIR, exist_ok=True)
+    """Wipe all persisted data from previous runs so each server start is fresh."""
+    for directory in (STOCK_DATA_DIR, NEWS_DIR):
+        if os.path.exists(directory):
+            shutil.rmtree(directory)
+        os.makedirs(directory, exist_ok=True)
 
-    # Wipe and recreate the news data directory.
-    if os.path.exists(NEWS_DIR):
-        shutil.rmtree(NEWS_DIR)
-    os.makedirs(NEWS_DIR, exist_ok=True)
+    # Log the simulated time so operators can confirm the rewind is active.
+    if TIME_REWIND_HOURS > 0:
+        print(
+            f"[Canary AI] TIME_REWIND_HOURS={TIME_REWIND_HOURS} — "
+            f"simulated time is {_simulated_now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cancel every running tracking task (stock + news) when the server shuts down."""
+    """Cancel every running background task (stock + news) on shutdown."""
     global news_task
 
-    # Cancel all stock-tracking tasks.
-    for ticker, task in tracking_tasks.items():
+    for task in stock_tasks.values():
         task.cancel()
 
-    # Cancel the news-tracking task if it's running.
-    all_tasks = list(tracking_tasks.values())
+    all_tasks = list(stock_tasks.values())
     if news_task is not None:
         news_task.cancel()
         all_tasks.append(news_task)
         news_task = None
 
-    # Wait for all tasks to finish their cancellation handling.
+    # Await cancellation so tasks can run their CancelledError handlers.
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
-    tracking_tasks.clear()
+    stock_tasks.clear()
     seen_news_ids.clear()
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
