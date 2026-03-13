@@ -23,8 +23,9 @@ app = FastAPI()
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STOCK_DATA_DIR = os.path.join(BASE_DIR, "stock_training_data")
-NEWS_DIR = os.path.join(BASE_DIR, "news")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+STOCK_DATA_DIR = os.path.join(DATA_DIR, "stock_training_data")
+NEWS_DIR = os.path.join(DATA_DIR, "news")
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news"
@@ -179,7 +180,7 @@ def _fetch_finnhub_news() -> list[dict]:
 async def _track_news() -> None:
     """
     Background task that polls Finnhub for general market news every
-    POLL_INTERVAL_SECONDS and appends new articles to news/news.csv.
+    POLL_INTERVAL_SECONDS and appends new articles to data/news/news.csv.
 
     Articles are deduplicated by their Finnhub-assigned ``id`` so that
     repeated polling cycles never write the same article twice.

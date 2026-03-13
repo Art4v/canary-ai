@@ -21,13 +21,13 @@ A hackathon project built for UNIHACK 2026.
   - `POST /track/{ticker}` — start tracking a ticker (409 if already tracked)
   - `DELETE /track/{ticker}` — stop tracking a ticker (404 if not tracked)
   - `GET /track` — list all currently tracked tickers
-- **CSV persistence** — each tracked ticker gets its own CSV file in `backend/stock_training_data/` with columns: `timestamp, open, high, low, close, volume`
-- **General news tracking** — polls Finnhub for general market news every 60 seconds, deduplicates by article ID, and stores results in `backend/news/news.csv`
+- **CSV persistence** — each tracked ticker gets its own CSV file in `backend/data/stock_training_data/` with columns: `timestamp, open, high, low, close, volume`
+- **General news tracking** — polls Finnhub for general market news every 60 seconds, deduplicates by article ID, and stores results in `backend/data/news/news.csv`
   - `POST /news` — start tracking news (409 if already tracking, 400 if API key missing)
   - `DELETE /news` — stop tracking news (404 if not tracking)
   - CSV columns: `id, category, datetime, headline, source, summary, url, image, related`
 - **Time rewind mode** — set `TIME_REWIND_HOURS=N` in `.env` to shift the app's clock N hours into the past; yfinance fetches candles from the earlier window and Finnhub news is filtered to exclude articles published after the simulated time (set to `0` or leave unset for real-time behaviour)
-- All data directories (`stock_training_data/`, `news/`) are wiped on server restart
+- All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
 ### Frontend
@@ -48,8 +48,9 @@ A hackathon project built for UNIHACK 2026.
 ```
 unihack-hackathon-submission/
 ├── backend/
-│   ├── news/                    # General news CSV (auto-created at runtime)
-│   ├── stock_training_data/     # Per-ticker CSV files (auto-created at runtime)
+│   ├── data/                    # Runtime data directory
+│   │   ├── news/                # General news CSV (auto-created at runtime)
+│   │   └── stock_training_data/ # Per-ticker CSV files (auto-created at runtime)
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── main.py                  # FastAPI app with stock tracking and news tracking
