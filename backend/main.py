@@ -32,7 +32,12 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_train
 async def _track_ticker(ticker: str) -> None:
     """
     Long-running async task that fetches the latest 1-minute candle for
-    *ticker* every 60 seconds and appends it to a CSV file.
+    *ticker* every 10 seconds and appends it to a CSV file.
+
+    On first invocation the CSV is back-filled with ~2 days of 1-minute
+    historical candles so that downstream consumers have immediate data.
+    After the backfill, the function enters a polling loop that appends
+    the most recent candle every 10 seconds.
 
     Parameters
     ----------
@@ -52,6 +57,31 @@ async def _track_ticker(ticker: str) -> None:
             writer = csv.writer(f)
             writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
 
+    # ── Backlog: pre-populate with 2 days of 1-minute historical candles ──
+    # This gives the CSV an immediate history so downstream consumers
+    # (charts, ML models, etc.) have data to work with right away,
+    # instead of waiting for the 10-second polling loop to accumulate rows.
+    loop = asyncio.get_running_loop()
+    backlog_df = await loop.run_in_executor(
+        None,
+        lambda: yf.Ticker(ticker).history(period="2d", interval="1m"),
+    )
+
+    if backlog_df is not None and not backlog_df.empty:
+        with open(csv_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            # Write every historical row — each row is one 1-minute candle.
+            for idx, row in backlog_df.iterrows():
+                writer.writerow([
+                    str(idx),       # pandas Timestamp → string
+                    row["Open"],
+                    row["High"],
+                    row["Low"],
+                    row["Close"],
+                    row["Volume"],
+                ])
+
+    # ── Live polling loop ──────────────────────────────────────────────
     try:
         while True:
             # yfinance is synchronous — run it in a thread executor so we

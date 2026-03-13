@@ -17,7 +17,7 @@ A hackathon project built for UNIHACK 2026.
 ### Backend
 
 - **Health-check endpoint** — `GET /` returns `{ "status": "ok" }`
-- **Live stock tracking** — background tasks fetch 1-minute candle data via yfinance every 10 seconds
+- **Live stock tracking** — when tracking starts, 2 days of historical 1-minute candle data are backfilled into the CSV, then background tasks continue fetching the latest candle every 10 seconds
   - `POST /track/{ticker}` — start tracking a ticker (409 if already tracked)
   - `DELETE /track/{ticker}` — stop tracking a ticker (404 if not tracked)
   - `GET /track` — list all currently tracked tickers
