@@ -7,7 +7,8 @@ A hackathon project built for UNIHACK 2026.
 | Layer    | Technology                  |
 | -------- | --------------------------- |
 | Frontend | React 19 + Vite 8           |
-| Backend  | FastAPI + Uvicorn (Python)   |
+| Backend  | FastAPI + Uvicorn (Python)  |
+| Data     | yfinance (Yahoo Finance)    |
 | Icons    | Lucide React                |
 | Animation| GSAP                        |
 
@@ -16,6 +17,11 @@ A hackathon project built for UNIHACK 2026.
 ### Backend
 
 - **Health-check endpoint** — `GET /` returns `{ "status": "ok" }`
+- **Live stock tracking** — background tasks fetch 1-minute candle data via yfinance every 10 seconds
+  - `POST /track/{ticker}` — start tracking a ticker (409 if already tracked)
+  - `DELETE /track/{ticker}` — stop tracking a ticker (404 if not tracked)
+  - `GET /track` — list all currently tracked tickers
+- **CSV persistence** — each tracked ticker gets its own CSV file in `backend/stock_training_data/` with columns: `timestamp, open, high, low, close, volume`
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
 ### Frontend
@@ -36,24 +42,25 @@ A hackathon project built for UNIHACK 2026.
 ```
 unihack-hackathon-submission/
 ├── backend/
-│   ├── main.py              # FastAPI app with health-check endpoint
-│   └── requirements.txt     # Python dependencies (fastapi, uvicorn)
+│   ├── stock_training_data/   # Per-ticker CSV files (auto-created at runtime)
+│   ├── main.py                # FastAPI app with health-check and stock tracking
+│   └── requirements.txt       # Python dependencies (fastapi, uvicorn, yfinance)
 ├── frontend/
-│   ├── public/              # Static assets (favicon, icons)
+│   ├── public/                # Static assets (favicon, icons)
 │   ├── src/
-│   │   ├── components/      # Reusable UI components (GlassCard)
-│   │   ├── data/            # Data files
-│   │   ├── features/        # Feature modules (dock, portfolio, sky, window)
-│   │   ├── hooks/           # Custom React hooks (useTheme)
-│   │   ├── styles/          # Global styles (base.css, tokens.css)
-│   │   ├── utils/           # Utility functions
-│   │   ├── App.jsx          # Root application component
-│   │   └── main.jsx         # Entry point
-│   ├── index.html           # HTML shell
+│   │   ├── components/        # Reusable UI components (GlassCard)
+│   │   ├── data/              # Data files
+│   │   ├── features/          # Feature modules (dock, portfolio, sky, window)
+│   │   ├── hooks/             # Custom React hooks (useTheme)
+│   │   ├── styles/            # Global styles (base.css, tokens.css)
+│   │   ├── utils/             # Utility functions
+│   │   ├── App.jsx            # Root application component
+│   │   └── main.jsx           # Entry point
+│   ├── index.html             # HTML shell
 │   ├── package.json
-│   └── vite.config.js       # Vite config with @ alias
-├── CLAUDE.md                # Instructions for Claude AI instances
-└── README.md                # This file
+│   └── vite.config.js         # Vite config with @ alias
+├── CLAUDE.md                  # Instructions for Claude AI instances
+└── README.md                  # This file
 ```
 
 ## Getting Started
