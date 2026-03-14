@@ -49,11 +49,31 @@ A hackathon project built for UNIHACK 2026.
   - `DELETE /predict` — stop the prediction loop (404 if not running)
   - Results are written to `backend/trades/portfolio.csv`
   - The prediction loop automatically picks up newly added/removed tickers each cycle
-- **Supabase database endpoints** — read-only access to the Supabase PostgreSQL database (returns 503 when credentials are not configured)
-  - `GET /database/users` — all rows from the `users` table
-  - `GET /database/portfolios` — all rows from the `portfolios` table
-  - `GET /database/holdings` — all rows from the `holdings` table
-  - `GET /database/transactions` — all rows from the `transactions` table
+- **Supabase database CRUD** — full Create/Read/Update/Delete for 4 tables, addressed by `{username}`. All responses use `{"success": true, "data": ...}` / `{"success": false, "error": "..."}` envelope. Returns 503 when Supabase credentials are not configured.
+  - **Users** (`/database/users`)
+    - `GET /database/users` — list all users
+    - `GET /database/users/{username}` — get a single user
+    - `POST /database/users` — create a user (`{"username", "email", "password_hash"}`)
+    - `PUT /database/users/{username}` — update user fields (all optional)
+    - `DELETE /database/users/{username}` — delete a user
+  - **Portfolios** (`/database/portfolios`)
+    - `GET /database/portfolios` — list all portfolios
+    - `GET /database/portfolios/{username}` — get portfolio for a user
+    - `POST /database/portfolios` — create a portfolio (`{"username", "cash_reserve", "total_capital_invested", "current_portfolio_value"}`)
+    - `PUT /database/portfolios/{username}` — update portfolio fields
+    - `DELETE /database/portfolios/{username}` — delete a user's portfolio
+  - **Holdings** (`/database/holdings`)
+    - `GET /database/holdings` — list all holdings
+    - `GET /database/holdings/{username}` — get holdings for a user
+    - `POST /database/holdings` — create a holding (`{"username", "ticker", "quantity", "average_buy_price"}`)
+    - `PUT /database/holdings/{username}` — update holdings fields
+    - `DELETE /database/holdings/{username}` — delete all holdings for a user
+  - **Transactions** (`/database/transactions`)
+    - `GET /database/transactions` — list all transactions
+    - `GET /database/transactions/{username}` — get transactions for a user
+    - `POST /database/transactions` — create a transaction (`{"username", "ticker", "tx_type", "quantity", "price_per_unit", "total_amount"}`)
+    - `PUT /database/transactions/{username}` — update transaction fields
+    - `DELETE /database/transactions/{username}` — delete all transactions for a user
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -82,6 +102,23 @@ A hackathon project built for UNIHACK 2026.
 ```
 unihack-hackathon-submission/
 ├── backend/
+│   ├── crud/                    # CRUD operations for each Supabase table
+│   │   ├── helpers.py           # Username-to-ID resolution helpers
+│   │   ├── users.py             # Users table CRUD
+│   │   ├── portfolios.py        # Portfolios table CRUD
+│   │   ├── holdings.py          # Holdings table CRUD
+│   │   └── transactions.py      # Transactions table CRUD
+│   ├── routers/                 # FastAPI routers (one per table)
+│   │   ├── users.py             # /database/users endpoints
+│   │   ├── portfolios.py        # /database/portfolios endpoints
+│   │   ├── holdings.py          # /database/holdings endpoints
+│   │   └── transactions.py      # /database/transactions endpoints
+│   ├── schemas/                 # Pydantic request/response schemas
+│   │   ├── response.py          # success_response / error_response helpers
+│   │   ├── users.py             # UserCreate, UserUpdate
+│   │   ├── portfolios.py        # PortfolioCreate, PortfolioUpdate
+│   │   ├── holdings.py          # HoldingCreate, HoldingUpdate
+│   │   └── transactions.py      # TransactionCreate, TransactionUpdate, TxType enum
 │   ├── data/                    # Runtime data directory
 │   │   ├── news/                # General news CSV (auto-created at runtime)
 │   │   └── stock_training_data/ # Per-ticker CSV files (auto-created at runtime)
@@ -93,6 +130,7 @@ unihack-hackathon-submission/
 │   │   └── portfolio.csv        # Trade decisions output (auto-generated)
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
+│   ├── dependencies.py          # Supabase client init + FastAPI Depends
 │   ├── main.py                  # FastAPI app with stock tracking, news, and prediction
 │   └── requirements.txt         # Python dependencies
 ├── frontend/

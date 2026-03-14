@@ -9,7 +9,9 @@ All data sources are polled every POLL_INTERVAL_SECONDS and persisted
 to CSV files that are wiped on every server startup.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta, timezone
 import yfinance as yf
 import asyncio
@@ -18,7 +20,13 @@ import os
 import shutil
 import requests
 from dotenv import load_dotenv
-from supabase import create_client, Client
+
+# Database routers — each provides full CRUD for one Supabase table.
+from routers import users as users_router
+from routers import portfolios as portfolios_router
+from routers import holdings as holdings_router
+from routers import transactions as transactions_router
+from schemas.response import error_response
 
 load_dotenv()
 
@@ -42,15 +50,6 @@ POLL_INTERVAL_SECONDS = 60
 # published after the simulated time. When 0 or unset, behaviour is
 # identical to real-time.
 TIME_REWIND_HOURS = float(os.getenv("TIME_REWIND_HOURS", "0"))
-
-# Supabase connection — reads URL and anon/service key from .env.
-# When either value is missing, supabase_client stays None and the
-# /database/* endpoints return 503 instead of crashing the server.
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-supabase_client: Client | None = None
-if SUPABASE_URL and SUPABASE_KEY:
-    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 NEWS_CSV_COLUMNS = [
     "id", "category", "datetime", "headline",
@@ -573,59 +572,26 @@ def prediction_status():
     }
 
 
-# ── Database endpoints ────────────────────────────────────────────────────
-# Read-only endpoints that proxy SELECT * queries to the Supabase PostgreSQL
-# database. Each returns {"data": [rows]} on success or 503 when the
-# Supabase client is not configured (missing SUPABASE_URL / SUPABASE_KEY).
-# These are sync defs — supabase-py is synchronous and FastAPI
-# automatically runs sync handlers in a threadpool.
-
-@app.get("/database/users")
-def get_users():
-    """Return all rows from the Supabase ``users`` table."""
-    if supabase_client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
-        )
-    response = supabase_client.table("users").select("*").execute()
-    return {"data": response.data}
+# ── Database routers ──────────────────────────────────────────────────────────────
+# Full CRUD for users, portfolios, holdings, and transactions tables.
+# Each router lives in routers/ and uses Depends(get_supabase_client)
+# from dependencies.py for the DB connection.
+app.include_router(users_router.router)
+app.include_router(portfolios_router.router)
+app.include_router(holdings_router.router)
+app.include_router(transactions_router.router)
 
 
-@app.get("/database/portfolios")
-def get_portfolios():
-    """Return all rows from the Supabase ``portfolios`` table."""
-    if supabase_client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
-        )
-    response = supabase_client.table("portfolios").select("*").execute()
-    return {"data": response.data}
-
-
-@app.get("/database/holdings")
-def get_holdings():
-    """Return all rows from the Supabase ``holdings`` table."""
-    if supabase_client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
-        )
-    response = supabase_client.table("holdings").select("*").execute()
-    return {"data": response.data}
-
-
-@app.get("/database/transactions")
-def get_transactions():
-    """Return all rows from the Supabase ``transactions`` table."""
-    if supabase_client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
-        )
-    response = supabase_client.table("transactions").select("*").execute()
-    return {"data": response.data}
+# ── Validation error handler ───────────────────────────────────────────────────────
+# Overrides FastAPI's default 422 response so the frontend always sees
+# the same {"success": false, "error": "..."} shape on bad input.
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Return validation errors in the standard error envelope."""
+    return JSONResponse(
+        status_code=400,
+        content=error_response(str(exc.errors())),
+    )
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
