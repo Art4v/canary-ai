@@ -7,6 +7,7 @@ A hackathon project built for UNIHACK 2026.
 | Layer    | Technology                  |
 | -------- | --------------------------- |
 | Frontend | React 19 + Vite 8           |
+| Routing  | React Router DOM            |
 | Backend  | FastAPI + Uvicorn (Python)  |
 | Prediction | C++17 (g++)               |
 | Data     | yfinance, Finnhub API       |
@@ -53,6 +54,7 @@ A hackathon project built for UNIHACK 2026.
 
 ### Frontend
 
+- **Login & Register pages** — separate routes (`/login`, `/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; stub form submission (console.log + redirect to dashboard)
 - **Theme system** — three modes: `auto`, `night`, and `day`
   - Auto mode cycles based on AEST time (day between 10:00–16:00, night otherwise) and re-evaluates every 60 seconds
   - Managed by `useTheme` hook and `ThemeProvider` context
@@ -69,6 +71,8 @@ A hackathon project built for UNIHACK 2026.
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
 - **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
 - **Corner Launchers** — two expandable quick-access menus in the bottom-left and bottom-right corners of the viewport; each features a 48px puffy trigger button (`+` icon that rotates to `×` on expand), 5 section-colored toggle buttons matching the Dock's navigation, and a "Clear All" action to close every open window; menu items animate in with staggered GSAP scale+fade, open windows show an outline ring, and both launchers work independently
+- **Draggable & resizable window system** — generic `Window` shell component in `features/window/` with `useDrag` and `useResize` hooks; supports 8-direction resize handles, viewport-clamped dragging via the header bar, GSAP pop-in animation, per-section color theming via CSS custom properties, and a `closeIcon` prop for per-window custom close button images
+- **Trades window** — opened/closed by the Trades dock button; contains a Buy/Sell toggle, empty content area, and a puffy 3D "Execute Order" button; wraps the generic Window shell with trades color tokens and a custom close icon PNG
 - **Modular feature folders** — scaffolded directories for `dock`, `portfolio`, `sky`, and `window` features
 
 ## Project Structure
@@ -93,20 +97,33 @@ unihack-hackathon-submission/
 │   ├── public/                # Static assets (favicon, icons)
 │   ├── src/
 │   │   ├── assets/
-│   │   │   └── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
+│   │   │   ├── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
+│   │   │   └── trades/        # Trades section images (close.png, etc.)
 │   │   ├── components/        # Reusable UI components (GlassCard, CornerLauncher, SnapPreview, SnapSeams)
+│   │   ├── contexts/          # React contexts (SnapContext)
 │   │   ├── data/              # Data files
 │   │   ├── features/          # Feature modules
 │   │   │   ├── dock/          # Cloud-shaped navigation dock (Dock.jsx, Dock.css)
 │   │   │   ├── portfolio/     # Portfolio feature (scaffold)
 │   │   │   ├── sky/           # Animated sky background, clouds, birds
-│   │   │   └── window/        # Window shell, TradesWindow, ChatWindow
-│   │   ├── contexts/          # React contexts (SnapContext)
-│   │   ├── hooks/             # Custom React hooks (useTheme, useSnapDrag, useSnapResize)
+│   │   │   └── window/        # Draggable/resizable window system
+│   │   │       ├── Window.jsx / .css       # Generic window shell (drag, resize, pop-in)
+│   │   │       ├── TradesWindow.jsx / .css  # Trades section content
+│   │   │       ├── ChatWindow.jsx / .css    # AI chat interface
+│   │   │       ├── PortfolioWindow.jsx / .css # Portfolio overview
+│   │   │       └── SettingsWindow.jsx / .css # Settings panel
+│   │   ├── hooks/             # Custom React hooks
+│   │   │   ├── useTheme.jsx   # Theme management hook
+│   │   │   ├── useDrag.jsx    # Draggable position hook
+│   │   │   └── useResize.jsx  # Resizable dimensions hook
+│   │   ├── pages/             # Route-level page components
+│   │   │   ├── AuthPages.css  # Shared auth page styles (glassmorphic card, puffy inputs)
+│   │   │   ├── LoginPage.jsx  # Login form page (/login)
+│   │   │   └── RegisterPage.jsx # Register form page (/register)
 │   │   ├── styles/            # Global styles (base.css, tokens.css)
 │   │   ├── utils/             # Utility functions
-│   │   ├── App.jsx            # Root application component
-│   │   └── main.jsx           # Entry point
+│   │   ├── App.jsx            # Root application component (Routes)
+│   │   └── main.jsx           # Entry point (BrowserRouter)
 │   ├── index.html             # HTML shell
 │   ├── package.json
 │   └── vite.config.js         # Vite config with @ alias
