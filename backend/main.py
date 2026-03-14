@@ -348,7 +348,7 @@ async def _run_prediction_loop() -> None:
                 else:
                     print(
                         f"[Prediction] Cycle complete — "
-                        f"trades.csv updated in {PREDICTIONS_DIR}/",
+                        f"portfolio.csv updated in {PREDICTIONS_DIR}/",
                         flush=True,
                     )
 
@@ -495,8 +495,8 @@ async def start_prediction():
     cycle; skips with a warning if none are found).
 
     Writes each cycle:
-      - predictions/trades.csv  — trade actions (BUY / SELL / HOLD)
-      - predictions/portfolio.csv   — updated position snapshot
+      - predictions/portfolio.csv  — trade actions (BUY / SELL / HOLD)
+      - predictions/holdings.csv   — updated position snapshot
 
     Returns 409 if the prediction loop is already running.
     """
@@ -549,7 +549,7 @@ def prediction_status():
       running         — bool, whether the loop is active
       binary          — absolute path the server will invoke
       binary_exists   — bool, whether that binary is compiled and on disk
-      output_dir      — directory where trades.csv / portfolio.csv are written
+      output_dir      — directory where portfolio.csv / holdings.csv are written
       poll_interval_s — seconds between prediction cycles
       tracked_tickers — tickers that will be passed on the next run
     """
@@ -574,7 +574,7 @@ async def startup_event():
         os.makedirs(directory, exist_ok=True)
 
     # Ensure the predictions output directory exists. Not wiped on restart
-    # so portfolio.csv survives across server restarts for trade continuity.
+    # so holdings.csv survives across server restarts for trade continuity.
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
 
     if TIME_REWIND_HOURS > 0:
