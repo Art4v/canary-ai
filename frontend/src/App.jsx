@@ -6,6 +6,7 @@ import TradesWindow from './features/window/TradesWindow.jsx'
 import ChatWindow from './features/window/ChatWindow.jsx'
 import PortfolioWindow from './features/window/PortfolioWindow.jsx'
 import SettingsWindow from './features/window/SettingsWindow.jsx'
+import CornerLauncher from './components/CornerLauncher.jsx'
 import { SnapProvider } from './contexts/SnapContext.jsx'
 import SnapPreview from './components/SnapPreview.jsx'
 import SnapSeams from './components/SnapSeams.jsx'
@@ -72,6 +73,17 @@ function App() {
   }, [])
 
   /**
+   * clearAll — close every open window at once.
+   * Resets openSections to empty, clears the z-order stack,
+   * and wipes all stored cascade positions.
+   */
+  const clearAll = useCallback(() => {
+    setOpenSections(new Set())
+    setZOrder([])
+    cascadeRef.current = {}
+  }, [])
+
+  /**
    * closeSection — close a single section window (used by window X buttons).
    * Removes the key from openSections, zOrder, and cascadeRef.
    *
@@ -122,6 +134,23 @@ function App() {
       </div>
       {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
       <Dock openSections={openSections} onNavigate={handleNavigate} />
+
+      {/* ── Corner Launchers ──
+          Two expandable quick-access menus in the bottom-left and bottom-right
+          corners. They mirror the Dock's 5 nav buttons plus a "Clear All" action
+          for faster access without moving the cursor to the central Dock. */}
+      <CornerLauncher
+        position="left"
+        openSections={openSections}
+        onNavigate={handleNavigate}
+        onClearAll={clearAll}
+      />
+      <CornerLauncher
+        position="right"
+        openSections={openSections}
+        onNavigate={handleNavigate}
+        onClearAll={clearAll}
+      />
 
       {/* SnapProvider wraps all windows and overlay components so they
           share the same snap state (bonds, snap preview, window registry) */}
