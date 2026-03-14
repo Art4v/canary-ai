@@ -16,6 +16,7 @@ A hackathon project built for UNIHACK 2026.
 | Animation| GSAP                        |
 | Async IO | aiofiles                    |
 | Auth     | bcrypt (server-side hashing)|
+| Chatbot  | Anthropic SDK (Claude)      |
 
 ## Features
 
@@ -80,6 +81,12 @@ A hackathon project built for UNIHACK 2026.
     - `POST /database/transactions` — create a transaction (`{"username", "ticker", "tx_type", "quantity", "price_per_unit", "total_amount"}`)
     - `PUT /database/transactions/{username}` — update transaction fields
     - `DELETE /database/transactions/{username}` — delete all transactions for a user
+- **Investment Advisor Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that helps users explore investment ideas
+  - Interactive conversation loop with an expert stock market advisor persona
+  - After each exchange, a separate Claude API call extracts all mentioned stock tickers and writes them to `backend/chatbot/watchlist.csv` (columns: `ticker`, `added_at`)
+  - Commands: `reset` clears conversation + watchlist, `quit`/`exit` exits, Ctrl+C exits cleanly
+  - API key loaded from `backend/chatbot/.env` (not committed); copy `.env.example` to `.env` and add your key
+  - Run: `cd backend/chatbot && python advisor.py`
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -137,6 +144,10 @@ unihack-hackathon-submission/
 │   ├── predictions/             # Prediction output directory (auto-created at runtime)
 │   │   ├── holdings.csv         # Current portfolio positions (auto-generated)
 │   │   └── portfolio.csv        # Trade decisions output (auto-generated)
+│   ├── chatbot/                   # Standalone investment advisor chatbot
+│   │   ├── advisor.py             # Terminal chatbot using Anthropic SDK
+│   │   ├── .env                   # API key (not committed — copy .env.example)
+│   │   └── .env.example           # Template for chatbot API key
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── dependencies.py          # Supabase client init + FastAPI Depends
@@ -179,6 +190,7 @@ unihack-hackathon-submission/
 │   └── vite.config.js         # Vite config with @ alias and base: '/dashboard/'
 ├── planning/
 │   └── sms-notifications.md   # Two-way SMS feature plan (Twilio)
+├── .gitignore                 # Root gitignore (chatbot secrets & runtime data)
 ├── CLAUDE.md                  # Instructions for Claude AI instances
 └── README.md                  # This file
 ```

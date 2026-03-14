@@ -6,3 +6,4 @@ python-dotenv
 supabase
 aiofiles
 bcrypt
+anthropic
