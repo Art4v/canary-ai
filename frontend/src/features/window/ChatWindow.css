@@ -1,0 +1,173 @@
+/* ══════════════════════════════════════════
+   ChatWindow — Chat section inner content
+   ══════════════════════════════════════════ */
+
+/* ── Header & Input Bar Override ──
+   The generic Window header uses --win-light, which matches the bubble color.
+   Override it to --color-chats-dark so the top and bottom bars are visually
+   distinct from the message bubbles. */
+.chat-window-wrapper .window-header {
+  background: var(--color-chats-dark);
+}
+
+/* ── Messages Scroll Area ──
+   Fills all available space between the header and the input bar.
+   Messages stack vertically from top, scrolling when overflow occurs. */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-chats-primary);
+}
+
+/* ── Message Row ──
+   Horizontal layout: avatar + bubble side by side.
+   Default alignment is left (bot messages). */
+.chat-message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* ── User Message Modifier ──
+   Flips the row so the avatar appears on the right side. */
+.chat-message--user {
+  flex-direction: row-reverse;
+}
+
+/* ── Avatar Circle ──
+   Small circular placeholder representing the sender.
+   Uses the lighter chats shade for a subtle look. */
+.chat-avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 50%;
+  background: var(--color-chats-light);
+}
+
+/* ── Speech Bubble ──
+   Rounded container for the message text.
+   Capped at 65% width so messages don't span the full row. */
+.chat-bubble {
+  max-width: 65%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--color-chats-light);
+  color: var(--color-chats-text);
+  font-size: var(--font-size-base);
+  word-wrap: break-word;
+  line-height: 1.4;
+}
+
+/* ── Input Bar ──
+   Pinned to the bottom of the window body.
+   Horizontal layout: text field + new-conversation button + send button. */
+.chat-input-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-chats-dark);
+}
+
+/* ── Text Input ──
+   Fills remaining horizontal space.
+   Pill-shaped with a border matching the dark chats token. */
+.chat-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 2px solid var(--color-chats-dark);
+  background: var(--color-chats-light);
+  color: var(--color-chats-text);
+  font-size: var(--font-size-base);
+  font-family: var(--font-family);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+/* Focus state — highlight the border with the primary color */
+.chat-input:focus {
+  border-color: var(--color-chats-primary);
+}
+
+/* Placeholder text styling */
+.chat-input::placeholder {
+  color: var(--color-chats-text);
+  opacity: 0.6;
+}
+
+/* ── New Conversation Button ──
+   Image-only button using chat_plus.png asset.
+   Styled to match the close button pattern in Window.css. */
+.chat-new-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, filter 0.15s;
+}
+
+/* Hover — subtle lift and brighten, matching .window-close:hover */
+.chat-new-btn:hover {
+  filter: brightness(1.1);
+  transform: scale(1.1);
+}
+
+/* Image inside the button — fill the button area */
+.chat-new-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ── Send Button ──
+   Circular 3D puffy button for submitting the message.
+   Same style as the new-conversation button. */
+.chat-send-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 50%;
+  border: 3px solid var(--color-chats-dark);
+  background: var(--color-surface);
+  color: var(--color-chats-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 3D puffy effect — bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 var(--color-chats-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+
+/* Hover lifts the button and deepens the shadow */
+.chat-send-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+  box-shadow:
+    0 6px 0 var(--color-chats-dark),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* Active press pushes the button down for tactile feedback */
+.chat-send-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 0 var(--color-chats-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}

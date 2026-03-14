@@ -3,6 +3,7 @@ import SkyBackground from './features/sky/SkyBackground.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
 import Dock from './features/dock/Dock.jsx'
 import TradesWindow from './features/window/TradesWindow.jsx'
+import ChatWindow from './features/window/ChatWindow.jsx'
 
 /**
  * App — root component that orchestrates the sky background, theme toggle,
@@ -33,6 +34,11 @@ function App() {
           Each window receives an onClose that clears the active section. */}
       {activeSection === 'trades' && (
         <TradesWindow onClose={() => setActiveSection(null)} />
+      )}
+
+      {/* Chat window — purple-themed AI chat interface */}
+      {activeSection === 'chats' && (
+        <ChatWindow onClose={() => setActiveSection(null)} />
       )}
     </>
   )

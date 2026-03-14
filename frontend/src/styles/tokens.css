@@ -16,9 +16,10 @@
 
   /* ── Section Colors (primary / dark / light) ── */
   /* Chats section — purple-pink palette */
-  --color-chats-primary: #e2aeec;
-  --color-chats-dark: #896b91;
-  --color-chats-light: #caafd2;
+  --color-chats-primary: #ecacf0;
+  --color-chats-dark: #d1add4;
+  --color-chats-light: #eccfee;
+  --color-chats-text: #4a2d52;
 
   /* Trades section — green palette */
   --color-trades-primary: #d6eeb4;
