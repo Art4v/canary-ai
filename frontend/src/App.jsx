@@ -141,9 +141,6 @@ function App() {
         <>
           <SkyBackground />
           <ThemeToggle />
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            Canary AI
-          </div>
           {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
           <Dock openSections={openSections} onNavigate={handleNavigate} />
 
