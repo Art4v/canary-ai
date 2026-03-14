@@ -46,6 +46,7 @@ A hackathon project built for UNIHACK 2026.
 - **GlassCard component** — reusable glassmorphism card with backdrop blur, configurable padding, and custom styling
 - **Design token system** (`tokens.css`) — CSS custom properties for colors, spacing (4px base scale), typography, shadows, and border radii
 - **Light & dark color palettes** — light mode defaults; dark mode activates via `.night` class on `<body>`
+- **Animated canary birds** — 6 bright-yellow canary birds fly right-to-left across the sky at different depths and speeds; wings use a rotation-based flap animation (±30° via GSAP `svgOrigin`) for visible flapping motion, each bird bobs vertically, and the SVG features orange beaks and white eye highlights
 - **GSAP** animation library integrated
 - **Lucide React** icon library
 - **Path aliasing** — `@` maps to `./src` via Vite config
