@@ -17,13 +17,14 @@ import './SettingsWindow.css'
  * Save handlers are stubs (console.log only) — database integration
  * will be added in a later phase.
  *
+ * @param {string}   windowId         Unique identifier for snap system
  * @param {Function} onClose          Called when the window's close button is clicked
  * @param {Function} [onFocus]        Called on mousedown to bring window to front
  * @param {number}   [zIndex]         Inline z-index for stacking order
  * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function SettingsWindow({ onClose, onFocus, zIndex, initialPosition }) {
+export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
   /* ── Local State ──
      Each setting field has its own piece of state so rows update independently. */
   const [apiKey, setApiKey] = useState('')
@@ -59,6 +60,7 @@ export default function SettingsWindow({ onClose, onFocus, zIndex, initialPositi
   return (
     <div className="settings-window-wrapper">
       <Window
+        windowId={windowId}
         title="Settings"
         onClose={onClose}
         closeIcon={closeIcon}

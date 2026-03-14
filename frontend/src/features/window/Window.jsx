@@ -1,7 +1,8 @@
 import { useRef, useEffect } from 'react'
 import gsap from 'gsap'
-import useDrag from '@/hooks/useDrag'
-import useResize from '@/hooks/useResize'
+import useSnapDrag from '@/hooks/useSnapDrag'
+import useSnapResize from '@/hooks/useSnapResize'
+import { useSnap } from '@/contexts/SnapContext'
 import './Window.css'
 
 /**
@@ -11,14 +12,19 @@ import './Window.css'
 const MIN_SIZE = { width: 300, height: 380 }
 
 /**
- * Window — generic draggable, resizable window shell.
+ * Window — generic draggable, resizable window shell with snap support.
  *
  * Renders a floating panel with:
  *   - A header bar (title label + close button) that acts as the drag handle
  *   - 8 invisible edge/corner resize handles
  *   - A GSAP pop-in animation on mount
  *   - Color theming via CSS custom properties derived from `colorTokenPrefix`
+ *   - Snap-aware dragging and resizing via SnapContext
  *
+ * On mount, registers with SnapContext so other windows can detect snap
+ * candidates against this window. On unmount, unregisters to clean up.
+ *
+ * @param {string}   windowId           Unique identifier for snap system (e.g. "trades")
  * @param {string}   title              Text shown in the header bar
  * @param {Function} onClose            Called when the X button is clicked
  * @param {React.ReactNode} children    Content rendered in the window body
@@ -31,6 +37,7 @@ const MIN_SIZE = { width: 300, height: 380 }
  * @returns {JSX.Element}
  */
 export default function Window({
+  windowId,
   title,
   onClose,
   closeIcon,
@@ -41,14 +48,53 @@ export default function Window({
   zIndex = 300,
   onFocus,
 }) {
-  /* Ref for the outer container — used by GSAP for the pop-in animation */
+  /* Ref for the outer container — used by GSAP for the pop-in animation
+     and registered with SnapContext for snap animations */
   const windowRef = useRef(null)
 
-  /* Drag hook — tracks position, provides onMouseDown for the header */
-  const { position, setPosition, onMouseDown } = useDrag(initialPosition, initialSize)
+  /* Snap-aware drag hook — tracks position, provides onMouseDown for the header,
+     handles group dragging and snap detection */
+  const { position, setPosition, onMouseDown } = useSnapDrag(windowId, initialPosition)
 
-  /* Resize hook — tracks size, provides handle elements to render */
-  const { size, resizeHandles } = useResize(initialSize, MIN_SIZE, setPosition)
+  /* Snap-aware resize hook — tracks size, provides handle elements to render,
+     handles linked resize propagation on bonded edges */
+  const { size, setSize, resizeHandles } = useSnapResize(windowId, initialSize, MIN_SIZE, setPosition)
+
+  /* Snap context — used for window registration/unregistration */
+  const snap = useSnap()
+
+  /**
+   * Register this window with SnapContext on mount.
+   * Provides the initial rect, position/size setters, and DOM element
+   * so other windows can detect snaps and the system can animate this window.
+   */
+  useEffect(() => {
+    if (!windowRef.current) return
+
+    snap.registerWindow(
+      windowId,
+      { ...initialPosition, width: initialSize.width, height: initialSize.height },
+      setPosition,
+      setSize,
+      windowRef.current,
+    )
+
+    /* Unregister on unmount to remove from all snap tracking */
+    return () => snap.unregisterWindow(windowId)
+  }, [windowId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Keep the snap registry in sync whenever position or size changes.
+   * This ensures snap detection always uses the latest rect.
+   */
+  useEffect(() => {
+    snap.updateRect(windowId, {
+      x: position.x,
+      y: position.y,
+      width: size.width,
+      height: size.height,
+    })
+  }, [windowId, position.x, position.y, size.width, size.height, snap])
 
   /**
    * Pop-in animation on mount — scales from 0.8 → 1 and fades in.
@@ -67,10 +113,12 @@ export default function Window({
     <div
       ref={windowRef}
       className="window"
+      /* Data attribute for snap system identification */
+      data-window-id={windowId}
       /* Bring this window to the front of the stack when clicked anywhere */
       onMouseDown={onFocus}
       style={{
-        /* Position and size driven by drag/resize hooks */
+        /* Position and size driven by snap-aware drag/resize hooks */
         left: position.x,
         top: position.y,
         width: size.width,

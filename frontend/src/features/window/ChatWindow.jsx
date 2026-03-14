@@ -23,13 +23,14 @@ const INITIAL_MESSAGES = [
  *   1. Scrollable message area — alternating bot/user speech bubbles with avatars
  *   2. Input bar — text field, new-conversation "+" button, and send "Enter" button
  *
+ * @param {string}   windowId         Unique identifier for snap system
  * @param {Function} onClose          Called when the window's X button is clicked
  * @param {Function} [onFocus]        Called on mousedown to bring window to front
  * @param {number}   [zIndex]         Inline z-index for stacking order
  * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function ChatWindow({ onClose, onFocus, zIndex, initialPosition }) {
+export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
   /* Chat message history — initialized with mock data */
   const [messages, setMessages] = useState(INITIAL_MESSAGES)
 
@@ -93,6 +94,7 @@ export default function ChatWindow({ onClose, onFocus, zIndex, initialPosition }
   return (
     <div className="chat-window-wrapper">
     <Window
+      windowId={windowId}
       title="Chat"
       onClose={onClose}
       closeIcon={closeIcon}

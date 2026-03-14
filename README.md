@@ -64,6 +64,7 @@ A hackathon project built for UNIHACK 2026.
 - **Lucide React** icon library
 - **Path aliasing** — `@` maps to `./src` via Vite config
 - **Multi-window support** — multiple section windows can be open simultaneously with cascaded positioning (+30px offset per window), bring-to-front on click (z-order stacking), and independent close via window X button or Dock toggle; all open windows are highlighted in the Dock
+- **Lego-style window snapping** — drag a window near another's edge and a semi-transparent ghost rectangle preview appears at ~30px proximity showing exactly where the window will land; release while the preview is visible to snap with a GSAP animation (snap-on-release); snapped windows move as a group when dragged; resize a shared edge and the bonded window resizes in sync; double-click a seam to unmerge with a playful bounce animation; supports N-window chaining across all 4 edges
 - **Cloud-shaped navigation dock** — large (~750×300px) cloud dock positioned just below center of the viewport, built with inline SVG ellipses (no drop shadow); contains the Canary logo with a GSAP bobbing animation, a "Canary AI" branding label, and 5 cartoony, puffy nav buttons (Chat, Trades, Portfolio, Settings, Help) styled as rounded squares with a 3D embossed effect (darker border, lighter fill, bottom shadow) and text labels; cloud fill uses `var(--color-cloud)` so it adapts to day/night mode automatically
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
 - **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
@@ -92,14 +93,15 @@ unihack-hackathon-submission/
 │   ├── src/
 │   │   ├── assets/
 │   │   │   └── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
-│   │   ├── components/        # Reusable UI components (GlassCard)
+│   │   ├── components/        # Reusable UI components (GlassCard, SnapPreview, SnapSeams)
 │   │   ├── data/              # Data files
 │   │   ├── features/          # Feature modules
 │   │   │   ├── dock/          # Cloud-shaped navigation dock (Dock.jsx, Dock.css)
 │   │   │   ├── portfolio/     # Portfolio feature (scaffold)
 │   │   │   ├── sky/           # Animated sky background, clouds, birds
 │   │   │   └── window/        # Window shell, TradesWindow, ChatWindow
-│   │   ├── hooks/             # Custom React hooks (useTheme)
+│   │   ├── contexts/          # React contexts (SnapContext)
+│   │   ├── hooks/             # Custom React hooks (useTheme, useSnapDrag, useSnapResize)
 │   │   ├── styles/            # Global styles (base.css, tokens.css)
 │   │   ├── utils/             # Utility functions
 │   │   ├── App.jsx            # Root application component

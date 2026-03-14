@@ -137,5 +137,5 @@ export default function useResize(initialSize, minSize, setPosition) {
     />
   ))
 
-  return { size, resizeHandles }
+  return { size, setSize, resizeHandles }
 }
