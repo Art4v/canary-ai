@@ -88,7 +88,7 @@ async def _track_ticker(ticker: str) -> None:
 
     if not os.path.exists(csv_path):
         with open(csv_path, "w", newline="") as f:
-            csv.writer(f).writerow(["timestamp", "open", "high", "low", "close", "volume"])
+            csv.writer(f).writerow(["timestamp", "ticker", "current_price", "day_high", "day_low", "volume", "market_cap"])
 
     # ── Backlog ──────────────────────────────────────────────────────
     # Pre-populate the CSV so downstream consumers (charts, ML models)
@@ -105,17 +105,23 @@ async def _track_ticker(ticker: str) -> None:
         lambda: yf.Ticker(ticker).history(start=backlog_start, end=sim_now, interval="1m"),
     )
 
+    # Fetch market cap once as a snapshot; yfinance does not provide
+    # historical market cap per candle so we reuse the current value.
+    ticker_info = await loop.run_in_executor(None, lambda: yf.Ticker(ticker).info)
+    market_cap = ticker_info.get("marketCap", "")
+
     if backlog_df is not None and not backlog_df.empty:
         with open(csv_path, "a", newline="") as f:
             writer = csv.writer(f)
             for idx, row in backlog_df.iterrows():
                 writer.writerow([
-                    str(idx),  # pandas Timestamp → string
-                    row["Open"],
-                    row["High"],
-                    row["Low"],
-                    row["Close"],
+                    str(idx),   # pandas Timestamp → string
+                    ticker,
+                    row["Close"],   # current_price mapped from Close
+                    row["High"],    # day_high
+                    row["Low"],     # day_low
                     row["Volume"],
+                    market_cap,
                 ])
 
     # ── Live polling loop ────────────────────────────────────────────
@@ -137,14 +143,21 @@ async def _track_ticker(ticker: str) -> None:
                 latest_candle = df.iloc[-1]
                 candle_timestamp = str(df.index[-1])  # pandas Timestamp → string
 
+                # Re-fetch market cap each cycle so the snapshot stays
+                # reasonably current.  One extra API call per 60 s is
+                # acceptable given the poll interval.
+                poll_ticker_info = await loop.run_in_executor(None, lambda: yf.Ticker(ticker).info)
+                poll_market_cap = poll_ticker_info.get("marketCap", "")
+
                 with open(csv_path, "a", newline="") as f:
                     csv.writer(f).writerow([
                         candle_timestamp,
-                        latest_candle["Open"],
-                        latest_candle["High"],
-                        latest_candle["Low"],
-                        latest_candle["Close"],
+                        ticker,
+                        latest_candle["Close"],   # current_price
+                        latest_candle["High"],    # day_high
+                        latest_candle["Low"],     # day_low
                         latest_candle["Volume"],
+                        poll_market_cap,
                     ])
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)

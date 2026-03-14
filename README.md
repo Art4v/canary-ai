@@ -8,6 +8,7 @@ A hackathon project built for UNIHACK 2026.
 | -------- | --------------------------- |
 | Frontend | React 19 + Vite 8           |
 | Backend  | FastAPI + Uvicorn (Python)  |
+| Prediction | C++17 (g++)               |
 | Data     | yfinance, Finnhub API       |
 | Icons    | Lucide React                |
 | Animation| GSAP                        |
@@ -21,12 +22,18 @@ A hackathon project built for UNIHACK 2026.
   - `POST /track/{ticker}` — start tracking a ticker (409 if already tracked)
   - `DELETE /track/{ticker}` — stop tracking a ticker (404 if not tracked)
   - `GET /track` — list all currently tracked tickers
-- **CSV persistence** — each tracked ticker gets its own CSV file in `backend/data/stock_training_data/` with columns: `timestamp, open, high, low, close, volume`
+- **CSV persistence** — each tracked ticker gets its own CSV file in `backend/data/stock_training_data/` with columns: `timestamp, ticker, current_price, day_high, day_low, volume, market_cap`
 - **General news tracking** — polls Finnhub for general market news every 60 seconds, deduplicates by article ID, and stores results in `backend/data/news/news.csv`
   - `POST /news` — start tracking news (409 if already tracking, 400 if API key missing)
   - `DELETE /news` — stop tracking news (404 if not tracking)
   - CSV columns: `id, category, datetime, headline, source, summary, url, image, related`
 - **Time rewind mode** — set `TIME_REWIND_HOURS=N` in `.env` to shift the app's clock N hours into the past; yfinance fetches candles from the earlier window and Finnhub news is filtered to exclude articles published after the simulated time (set to `0` or leave unset for real-time behaviour)
+- **Prediction module** (C++) — loads and parses per-ticker CSV data for stock price prediction
+  - Reads CSV files from `backend/prediction/test_data/` (AAPL, BOBS, MSFT)
+  - Parses timestamps, prices, volume, and market cap into `StockRow` structs
+  - Sorts data chronologically for time-series analysis
+  - **Timestamp alignment** — aligns all stocks to a common timestamp index using forward-fill, handling gaps from low-liquidity trading (e.g. BOBS has fewer rows than AAPL/MSFT)
+  - Build: `cd backend/prediction && g++ -std=c++17 -o prediction prediction.cpp`
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -51,6 +58,9 @@ unihack-hackathon-submission/
 │   ├── data/                    # Runtime data directory
 │   │   ├── news/                # General news CSV (auto-created at runtime)
 │   │   └── stock_training_data/ # Per-ticker CSV files (auto-created at runtime)
+│   ├── prediction/              # C++ stock prediction module
+│   │   ├── prediction.cpp       # CSV loader, parser, and prediction driver
+│   │   └── test_data/           # Test CSV files (AAPL.csv, BOBS.csv, MSFT.csv)
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── main.py                  # FastAPI app with stock tracking and news tracking
@@ -79,6 +89,7 @@ unihack-hackathon-submission/
 
 - **Node.js** (v18+) and npm
 - **Python** (3.10+) and pip
+- **g++** with C++17 support (for prediction module)
 
 ### Backend
 
