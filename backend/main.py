@@ -1,9 +1,12 @@
 """
 FastAPI backend for Canary AI.
 
-Provides live stock-tracking endpoints (yfinance) and a general-news
-tracking endpoint (Finnhub). Both data sources are polled every 10
-seconds and persisted to CSV files that are wiped on every server startup.
+Provides live stock-tracking endpoints (yfinance), a general-news
+tracking endpoint (Finnhub), and a prediction loop that runs the
+compiled C++ efficient-frontier optimizer on demand.
+
+All data sources are polled every POLL_INTERVAL_SECONDS and persisted
+to CSV files that are wiped on every server startup.
 """
 
 from fastapi import FastAPI, HTTPException
@@ -22,23 +25,20 @@ app = FastAPI()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = "data"
 STOCK_DATA_DIR = os.path.join(DATA_DIR, "stock_training_data")
 NEWS_DIR = os.path.join(DATA_DIR, "news")
-
-PREDICTIONS_DIR = os.path.join(BASE_DIR, "predictions")
-PREDICTION_EXE = os.path.join(BASE_DIR, "prediction", "prediction.exe")
+PREDICTIONS_DIR = "predictions"
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news"
 
-# Shared by both the stock and news polling loops.
+# Shared by the stock, news, and prediction polling loops.
 POLL_INTERVAL_SECONDS = 60
 
 # Shift the app's clock N hours into the past so yfinance returns data from
 # that earlier window and Finnhub news is filtered to exclude articles
-# published after the simulated time.  When 0 or unset, behaviour is
+# published after the simulated time. When 0 or unset, behaviour is
 # identical to real-time.
 TIME_REWIND_HOURS = float(os.getenv("TIME_REWIND_HOURS", "0"))
 
@@ -47,7 +47,14 @@ NEWS_CSV_COLUMNS = [
     "source", "summary", "url", "image", "related",
 ]
 
-# ── Time simulation ──────────────────────────────────────────────────────────
+# Path to the compiled C++ binary — relative to the working directory
+# (i.e. run uvicorn from backend/). On Windows the .exe variant is used
+# automatically if present.
+_PREDICTION_BIN_WIN  = os.path.join("prediction", "prediction.exe")
+_PREDICTION_BIN_UNIX = os.path.join("prediction", "prediction")
+PREDICTION_BIN = _PREDICTION_BIN_WIN if os.path.exists(_PREDICTION_BIN_WIN) else _PREDICTION_BIN_UNIX
+
+# ── Time simulation ───────────────────────────────────────────────────────────
 
 def _simulated_now() -> datetime:
     """
@@ -66,12 +73,7 @@ stock_tasks: dict[str, asyncio.Task] = {}
 
 news_task: asyncio.Task | None = None
 
-# Background task running the C++ prediction loop.
 prediction_task: asyncio.Task | None = None
-
-# Per-ticker events set after each data write; the prediction loop
-# waits for ALL events before running the C++ prediction executable.
-stock_data_events: dict[str, asyncio.Event] = {}
 
 # Tracks Finnhub article IDs already persisted so duplicate articles
 # across polling cycles are never written twice.
@@ -125,7 +127,7 @@ async def _track_ticker(ticker: str) -> None:
             writer = csv.writer(f)
             for idx, row in backlog_df.iterrows():
                 writer.writerow([
-                    str(idx),   # pandas Timestamp → string
+                    str(idx),   # pandas Timestamp -> string
                     ticker,
                     row["Close"],   # current_price mapped from Close
                     row["High"],    # day_high
@@ -133,10 +135,6 @@ async def _track_ticker(ticker: str) -> None:
                     row["Volume"],
                     market_cap,
                 ])
-
-    # Signal that backlog data is available for prediction
-    if ticker in stock_data_events:
-        stock_data_events[ticker].set()
 
     # ── Live polling loop ────────────────────────────────────────────
     try:
@@ -155,11 +153,10 @@ async def _track_ticker(ticker: str) -> None:
 
             if df is not None and not df.empty:
                 latest_candle = df.iloc[-1]
-                candle_timestamp = str(df.index[-1])  # pandas Timestamp → string
+                candle_timestamp = str(df.index[-1])  # pandas Timestamp -> string
 
                 # Re-fetch market cap each cycle so the snapshot stays
-                # reasonably current.  One extra API call per 60 s is
-                # acceptable given the poll interval.
+                # reasonably current.
                 poll_ticker_info = await loop.run_in_executor(None, lambda: yf.Ticker(ticker).info)
                 poll_market_cap = poll_ticker_info.get("marketCap", "")
 
@@ -173,10 +170,6 @@ async def _track_ticker(ticker: str) -> None:
                         latest_candle["Volume"],
                         poll_market_cap,
                     ])
-
-            # Signal that fresh data is available for prediction
-            if ticker in stock_data_events:
-                stock_data_events[ticker].set()
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
@@ -233,7 +226,7 @@ async def _track_news() -> None:
             articles = await loop.run_in_executor(None, _fetch_finnhub_news)
 
             # Filter out articles already seen AND articles published after
-            # the simulated time.  Finnhub's general-news API has no
+            # the simulated time. Finnhub's general-news API has no
             # server-side date-range param, so filtering is client-side.
             # When TIME_REWIND_HOURS=0, cutoff equals real now and every
             # returned article passes the timestamp check.
@@ -267,6 +260,108 @@ async def _track_news() -> None:
         pass
 
 
+# ── Prediction loop ───────────────────────────────────────────────────────────
+
+async def _run_prediction_loop() -> None:
+    """
+    Background task that re-runs the C++ efficient-frontier predictor
+    once per POLL_INTERVAL_SECONDS.
+
+    Behaviour:
+      - Waits one full POLL_INTERVAL_SECONDS before the first run so
+        _track_ticker has already back-filled and written CSV rows.
+      - Skips a cycle (with a printed warning) if no tickers are
+        currently being tracked via POST /track/<ticker>.
+      - Skips a cycle if the compiled binary cannot be found on disk.
+      - Captures stdout/stderr from the subprocess and prints them so
+        the Uvicorn terminal shows the full C++ prediction output.
+      - Runs until cancelled by DELETE /predict or server shutdown.
+
+    The C++ binary is invoked as:
+        <PREDICTION_BIN> <STOCK_DATA_DIR> <PREDICTIONS_DIR> TICKER1 TICKER2 ...
+    """
+    os.makedirs(PREDICTIONS_DIR, exist_ok=True)
+
+    # Give the stock-tracking loop one full cycle head-start so CSVs
+    # exist and have at least the backlog rows written before we run.
+    await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    try:
+        while True:
+            # ── Guard: binary must be compiled and present ────────────
+            if not os.path.isfile(PREDICTION_BIN):
+                print(
+                    f"[Prediction] WARNING: binary not found at {PREDICTION_BIN}.\n"
+                    "  Compile with:\n"
+                    "  g++ -O2 -std=c++17 -o backend/prediction/prediction "
+                    "backend/prediction/prediction.cpp",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Guard: at least one ticker must be actively tracked ───
+            tickers = list(stock_tasks.keys())
+            if not tickers:
+                print(
+                    "[Prediction] WARNING: no tickers are being tracked — skipping cycle. "
+                    "POST /track/<ticker> to start collecting data.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Run the C++ predictor ─────────────────────────────────
+            # Use subprocess.run in a thread executor rather than
+            # asyncio.create_subprocess_exec — the async variant requires
+            # ProactorEventLoop on Windows which uvicorn does not use,
+            # causing silent failures. run_in_executor is cross-platform.
+            cmd = [PREDICTION_BIN, STOCK_DATA_DIR, PREDICTIONS_DIR] + tickers
+            print(f"[Prediction] Running: {' '.join(cmd)}", flush=True)
+
+            try:
+                import subprocess as _subprocess
+
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: _subprocess.run(
+                        cmd,
+                        capture_output=True,
+                    ),
+                )
+
+                if result.stdout:
+                    print(result.stdout.decode(errors="replace"), flush=True)
+
+                if result.stderr:
+                    print(
+                        f"[Prediction] STDERR:\n{result.stderr.decode(errors='replace')}",
+                        flush=True,
+                    )
+
+                if result.returncode != 0:
+                    print(
+                        f"[Prediction] WARNING: process exited with code {result.returncode}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[Prediction] Cycle complete — "
+                        f"portfolio.csv updated in {PREDICTIONS_DIR}/",
+                        flush=True,
+                    )
+
+            except Exception as exc:
+                # Don't let a single failed run kill the loop.
+                print(f"[Prediction] ERROR during subprocess: {exc}", flush=True)
+
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    except asyncio.CancelledError:
+        print("[Prediction] Loop cancelled — stopping.", flush=True)
+
+
 # ── Stock endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -291,9 +386,6 @@ async def start_tracking(ticker: str):
 
     if ticker in stock_tasks:
         raise HTTPException(status_code=409, detail=f"{ticker} is already being tracked")
-
-    # Create a data-ready event so the prediction loop can wait for this ticker
-    stock_data_events[ticker] = asyncio.Event()
 
     task = asyncio.create_task(_track_ticker(ticker))
     stock_tasks[ticker] = task
@@ -321,11 +413,6 @@ async def stop_tracking(ticker: str):
     stock_tasks[ticker].cancel()
     del stock_tasks[ticker]
 
-    # Set the event (to unblock any waiting prediction loop) then remove it
-    if ticker in stock_data_events:
-        stock_data_events[ticker].set()
-        del stock_data_events[ticker]
-
     return {"message": f"Stopped tracking {ticker}"}
 
 
@@ -338,114 +425,6 @@ def list_tracked():
     sorted list of uppercase ticker strings.
     """
     return {"tracked": sorted(stock_tasks.keys())}
-
-
-# ── Prediction loop ───────────────────────────────────────────────────────────
-
-async def _run_prediction_loop() -> None:
-    """
-    Background task that waits for all tracked stocks to have fresh data,
-    then runs the C++ prediction executable. Repeats until cancelled or
-    no stocks remain.
-
-    Each cycle re-snapshots current tickers so newly added/removed stocks
-    are picked up automatically.
-    """
-    try:
-        while True:
-            # Snapshot current tickers from active tracking tasks
-            current_tickers = list(stock_tasks.keys())
-
-            # Auto-stop if no stocks are being tracked
-            if not current_tickers:
-                print("[Canary AI] Prediction loop: no stocks tracked, stopping.")
-                break
-
-            # Ensure events exist for all current tickers (handles newly added ones)
-            for ticker in current_tickers:
-                if ticker not in stock_data_events:
-                    stock_data_events[ticker] = asyncio.Event()
-
-            # Wait for ALL tracked tickers to signal fresh data
-            await asyncio.gather(
-                *(stock_data_events[t].wait() for t in current_tickers
-                  if t in stock_data_events)
-            )
-
-            # Clear all events so the next cycle waits for new data
-            for ticker in current_tickers:
-                if ticker in stock_data_events:
-                    stock_data_events[ticker].clear()
-
-            # Build command: prediction.exe <data_dir> <output_dir> <TICKER1> ...
-            cmd = [PREDICTION_EXE, STOCK_DATA_DIR, PREDICTIONS_DIR] + current_tickers
-            print(f"[Canary AI] Running prediction: {' '.join(cmd)}")
-
-            # Run the C++ executable as a subprocess
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-
-            # Log the result
-            if proc.returncode == 0:
-                print(f"[Canary AI] Prediction completed successfully.")
-                if stdout:
-                    print(stdout.decode())
-            else:
-                print(f"[Canary AI] Prediction failed (exit code {proc.returncode}).")
-                if stderr:
-                    print(stderr.decode())
-
-    except asyncio.CancelledError:
-        pass
-
-
-# ── Prediction endpoints ─────────────────────────────────────────────────────
-
-@app.post("/predict")
-async def start_prediction():
-    """
-    Start the background prediction loop.
-
-    The loop waits for all tracked stocks to have fresh data, then runs
-    the C++ prediction executable. Results are written to
-    backend/predictions/portfolio.csv.
-
-    Returns 200 on success, 409 if prediction is already running, or
-    400 if no stocks are currently being tracked.
-    """
-    global prediction_task
-
-    if prediction_task is not None and not prediction_task.done():
-        raise HTTPException(status_code=409, detail="Prediction is already running")
-
-    if not stock_tasks:
-        raise HTTPException(status_code=400, detail="No stocks are being tracked")
-
-    prediction_task = asyncio.create_task(_run_prediction_loop())
-
-    return {"message": "Started prediction loop"}
-
-
-@app.delete("/predict")
-async def stop_prediction():
-    """
-    Stop the background prediction loop.
-
-    Returns 200 on success or 404 if prediction is not running.
-    """
-    global prediction_task
-
-    if prediction_task is None or prediction_task.done():
-        raise HTTPException(status_code=404, detail="Prediction is not running")
-
-    prediction_task.cancel()
-    prediction_task = None
-
-    return {"message": "Stopped prediction loop"}
 
 
 # ── News endpoints ────────────────────────────────────────────────────────────
@@ -497,20 +476,107 @@ async def stop_news_tracking():
     return {"message": "Stopped tracking news"}
 
 
+# ── Prediction endpoints ──────────────────────────────────────────────────────
+
+@app.post("/predict")
+async def start_prediction():
+    """
+    Start the recurring prediction loop.
+
+    Waits one full POLL_INTERVAL_SECONDS before the first run so stock
+    CSVs have time to be populated, then re-runs the C++ efficient-frontier
+    predictor every POLL_INTERVAL_SECONDS thereafter.
+
+    Tickers are read dynamically from whatever is currently tracked via
+    POST /track/<ticker> at the start of each cycle — adding or removing
+    tickers takes effect on the next run without restarting this loop.
+
+    Requires at least one ticker to be actively tracked (checked each
+    cycle; skips with a warning if none are found).
+
+    Writes each cycle:
+      - predictions/portfolio.csv  — trade actions (BUY / SELL / HOLD)
+      - predictions/holdings.csv   — updated position snapshot
+
+    Returns 409 if the prediction loop is already running.
+    """
+    global prediction_task
+
+    if prediction_task is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Prediction loop is already running. DELETE /predict to stop it first.",
+        )
+
+    prediction_task = asyncio.create_task(_run_prediction_loop())
+
+    return {
+        "message": (
+            f"Prediction loop started. "
+            f"First run in ~{POLL_INTERVAL_SECONDS}s once stock data is ready. "
+            f"Output will be written to {PREDICTIONS_DIR}/"
+        )
+    }
+
+
+@app.delete("/predict")
+async def stop_prediction():
+    """
+    Stop the recurring prediction loop.
+
+    Returns 404 if the prediction loop is not currently running.
+    """
+    global prediction_task
+
+    if prediction_task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Prediction loop is not running. POST /predict to start it.",
+        )
+
+    prediction_task.cancel()
+    prediction_task = None
+
+    return {"message": "Prediction loop stopped."}
+
+
+@app.get("/predict")
+def prediction_status():
+    """
+    Return the current status of the prediction loop.
+
+    Response fields:
+      running         — bool, whether the loop is active
+      binary          — absolute path the server will invoke
+      binary_exists   — bool, whether that binary is compiled and on disk
+      output_dir      — directory where portfolio.csv / holdings.csv are written
+      poll_interval_s — seconds between prediction cycles
+      tracked_tickers — tickers that will be passed on the next run
+    """
+    return {
+        "running": prediction_task is not None,
+        "binary": PREDICTION_BIN,
+        "binary_exists": os.path.isfile(PREDICTION_BIN),
+        "output_dir": PREDICTIONS_DIR,
+        "poll_interval_s": POLL_INTERVAL_SECONDS,
+        "tracked_tickers": sorted(stock_tasks.keys()),
+    }
+
+
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
-    """Wipe stock/news data from previous runs; preserve predictions across restarts."""
+    """Wipe all persisted data from previous runs so each server start is fresh."""
     for directory in (STOCK_DATA_DIR, NEWS_DIR):
         if os.path.exists(directory):
             shutil.rmtree(directory)
         os.makedirs(directory, exist_ok=True)
 
-    # Predictions directory persists across restarts (holdings state matters)
+    # Ensure the predictions output directory exists. Not wiped on restart
+    # so holdings.csv survives across server restarts for trade continuity.
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
 
-    # Log the simulated time so operators can confirm the rewind is active.
     if TIME_REWIND_HOURS > 0:
         print(
             f"[Canary AI] TIME_REWIND_HOURS={TIME_REWIND_HOURS} — "
@@ -523,26 +589,25 @@ async def shutdown_event():
     """Cancel every running background task (stock + news + prediction) on shutdown."""
     global news_task, prediction_task
 
+    all_tasks = list(stock_tasks.values())
+
     for task in stock_tasks.values():
         task.cancel()
 
-    all_tasks = list(stock_tasks.values())
     if news_task is not None:
         news_task.cancel()
         all_tasks.append(news_task)
         news_task = None
 
-    # Cancel prediction loop if running
-    if prediction_task is not None and not prediction_task.done():
+    if prediction_task is not None:
         prediction_task.cancel()
         all_tasks.append(prediction_task)
         prediction_task = None
 
-    # Await cancellation so tasks can run their CancelledError handlers.
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
+
     stock_tasks.clear()
-    stock_data_events.clear()
     seen_news_ids.clear()
 
 
@@ -551,3 +616,5 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
+
