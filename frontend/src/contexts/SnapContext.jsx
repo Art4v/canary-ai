@@ -8,12 +8,109 @@ import { createContext, useContext, useState, useRef, useCallback } from 'react'
  *     (stored in refs to avoid 60fps re-renders during drag)
  *   - A `bonds` state array describing edge connections between snapped windows
  *   - Functions for snap detection, bond management, and group queries
+ *   - Layout bar state for Windows 11-style snap layouts
  *
  * @see useSnapDrag — consumes this context for drag-time snap detection
  * @see useSnapResize — consumes this context for linked resize propagation
  * @see SnapSeams — reads bonds state for seam overlays
+ * @see SnapLayoutBar — reads layoutBarVisible and provides zone hover callbacks
  */
 const SnapContext = createContext(null)
+
+/**
+ * SNAP_LAYOUTS — array of 6 Windows 11-style layout configurations.
+ *
+ * Each layout has a `name` string and a `zones` array. Each zone is
+ * defined as fractional coordinates `{ x, y, w, h }` in 0–1 range,
+ * representing its position and size within the viewport.
+ *
+ * Layout overview:
+ *   0: Full screen (single zone)
+ *   1: Left/Right halves (2 zones)
+ *   2: Left half + 2 right quarters (3 zones)
+ *   3: 4 equal quarters (4 zones)
+ *   4: 3 equal columns (3 zones)
+ *   5: 3 columns with wide center (3 zones)
+ */
+export const SNAP_LAYOUTS = [
+  {
+    name: 'Full',
+    zones: [{ x: 0, y: 0, w: 1, h: 1 }],
+  },
+  {
+    name: 'Halves',
+    zones: [
+      { x: 0, y: 0, w: 0.5, h: 1 },
+      { x: 0.5, y: 0, w: 0.5, h: 1 },
+    ],
+  },
+  {
+    name: 'Left + 2 Right',
+    zones: [
+      { x: 0, y: 0, w: 0.5, h: 1 },
+      { x: 0.5, y: 0, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+    ],
+  },
+  {
+    name: 'Quarters',
+    zones: [
+      { x: 0, y: 0, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0, w: 0.5, h: 0.5 },
+      { x: 0, y: 0.5, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0.5, w: 0.5, h: 0.5 },
+    ],
+  },
+  {
+    name: '3 Columns',
+    zones: [
+      { x: 0, y: 0, w: 1 / 3, h: 1 },
+      { x: 1 / 3, y: 0, w: 1 / 3, h: 1 },
+      { x: 2 / 3, y: 0, w: 1 / 3, h: 1 },
+    ],
+  },
+  {
+    name: 'Wide Center',
+    zones: [
+      { x: 0, y: 0, w: 0.25, h: 1 },
+      { x: 0.25, y: 0, w: 0.5, h: 1 },
+      { x: 0.75, y: 0, w: 0.25, h: 1 },
+    ],
+  },
+]
+
+/**
+ * computeZoneRect — converts a fractional zone definition into pixel coordinates.
+ *
+ * Applies edge padding around the viewport and half-gap insets on internal
+ * edges to create visual gaps between adjacent zones.
+ *
+ * @param {object} zone       Fractional zone `{ x, y, w, h }` in 0–1 range
+ * @param {number} [padding=8]  Pixel padding around the viewport edges
+ * @param {number} [gap=8]      Pixel gap between adjacent zones
+ * @returns {object}          Pixel rect `{ x, y, width, height }`
+ */
+export function computeZoneRect(zone, padding = 8, gap = 8) {
+  /* Usable viewport area after subtracting edge padding on all sides */
+  const usableW = window.innerWidth - padding * 2
+  const usableH = window.innerHeight - padding * 2
+
+  /* Convert fractional coordinates to pixel positions within usable area */
+  let x = padding + zone.x * usableW
+  let y = padding + zone.y * usableH
+  let w = zone.w * usableW
+  let h = zone.h * usableH
+
+  /* Half-gap inset on internal edges to create gaps between zones.
+     Edges at 0 or 1 are viewport edges — no inset needed. */
+  const halfGap = gap / 2
+  if (zone.x > 0) { x += halfGap; w -= halfGap }       /* left internal edge */
+  if (zone.x + zone.w < 1) { w -= halfGap }             /* right internal edge */
+  if (zone.y > 0) { y += halfGap; h -= halfGap }        /* top internal edge */
+  if (zone.y + zone.h < 1) { h -= halfGap }             /* bottom internal edge */
+
+  return { x, y, width: w, height: h }
+}
 
 /**
  * SNAP_THRESHOLD — maximum pixel distance between two edges for a snap
@@ -68,6 +165,14 @@ export function SnapProvider({ children }) {
 
   /** Snap preview rect — shows a ghost rectangle where the window will land */
   const [snapPreview, setSnapPreview] = useState(null)
+
+  /** Whether the snap layout bar is visible (renders the toolbar UI) */
+  const [layoutBarVisible, setLayoutBarVisible] = useState(false)
+
+  /** Currently hovered layout zone — stored in a ref for hot-path reads
+   *  during drag (avoids re-render on every zone hover change).
+   *  Shape: { layoutIndex, zoneIndex, rect } or null */
+  const layoutZoneHover = useRef(null)
 
   /**
    * registerWindow — called by each Window on mount.
@@ -309,6 +414,17 @@ export function SnapProvider({ children }) {
   }, [])
 
   /**
+   * breakBondsForWindow — removes all bonds involving the given window.
+   * Used by layout snapping to detach a window from its snap group before
+   * repositioning it to a layout zone.
+   *
+   * @param {string} id  Window ID whose bonds should be removed
+   */
+  const breakBondsForWindow = useCallback((id) => {
+    setBonds(prev => prev.filter(b => b.idA !== id && b.idB !== id))
+  }, [])
+
+  /**
    * showSnapPreview — displays a ghost rectangle preview at the given rect.
    * Shows where the dragged window will land after snapping.
    *
@@ -325,6 +441,39 @@ export function SnapProvider({ children }) {
   const clearSnapPreview = useCallback(() => {
     setSnapPreview(null)
   }, [])
+
+  /**
+   * showLayoutBar — makes the snap layout bar visible.
+   * Called when the user drags a window near the top of the viewport.
+   */
+  const showLayoutBar = useCallback(() => {
+    setLayoutBarVisible(true)
+  }, [])
+
+  /**
+   * hideLayoutBar — hides the snap layout bar and clears any hovered zone.
+   * Called when the cursor moves away from the top edge or on mouseup.
+   */
+  const hideLayoutBar = useCallback(() => {
+    setLayoutBarVisible(false)
+    layoutZoneHover.current = null
+  }, [])
+
+  /**
+   * setLayoutZoneHover — updates the currently hovered layout zone.
+   * When a zone is hovered, shows a full-viewport snap preview at that zone's rect.
+   * When cleared (null), hides the snap preview.
+   *
+   * @param {object|null} info  { layoutIndex, zoneIndex, rect } or null to clear
+   */
+  const handleSetLayoutZoneHover = useCallback((info) => {
+    layoutZoneHover.current = info
+    if (info) {
+      showSnapPreview(info.rect)
+    } else {
+      clearSnapPreview()
+    }
+  }, [showSnapPreview, clearSnapPreview])
 
   /* Bundle all values and functions into the context value */
   const value = {
@@ -344,6 +493,7 @@ export function SnapProvider({ children }) {
     /* Bond management */
     commitSnap,
     breakBond,
+    breakBondsForWindow,
     /* Group queries */
     getGroup,
     getBondsForWindow,
@@ -351,6 +501,12 @@ export function SnapProvider({ children }) {
     snapPreview,
     showSnapPreview,
     clearSnapPreview,
+    /* Layout bar */
+    layoutBarVisible,
+    showLayoutBar,
+    hideLayoutBar,
+    layoutZoneHover,
+    setLayoutZoneHover: handleSetLayoutZoneHover,
   }
 
   return (

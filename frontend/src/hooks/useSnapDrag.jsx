@@ -141,22 +141,44 @@ export default function useSnapDrag(windowId, initialPosition) {
         })
       }
 
-      /* Run snap detection against non-group windows */
-      const proposedRect = { x: newX, y: newY, width, height }
-      const candidate = snap.getSnapTarget(windowId, proposedRect)
+      /* ── Layout bar trigger ──
+         Show the snap layout bar when cursor is near the top edge;
+         hide it when cursor moves away from the bar zone. */
+      if (e.clientY < 10) {
+        snap.showLayoutBar()
+      } else if (e.clientY > 90) {
+        snap.hideLayoutBar()
+      }
 
-      if (candidate) {
-        /* Candidate within SNAP_THRESHOLD — show preview and store pending snap.
-           The window follows the cursor freely; the ghost preview shows where
-           it will land on release. No auto-jump during drag. */
-        snap.showSnapPreview(candidate.snappedRect)
-        pendingBond.current = candidate.bond
-        pendingSnappedRect.current = candidate.snappedRect
-      } else {
-        /* No snap candidate — clear preview and pending state */
-        snap.clearSnapPreview()
+      /* ── Snap detection ──
+         If a layout zone is currently hovered, use its rect as the
+         snap target (bypassing normal edge-to-edge detection). Otherwise
+         fall through to the standard snap detection algorithm. */
+      const hoveredZone = snap.layoutZoneHover.current
+      if (hoveredZone) {
+        /* Layout zone hovered — show its rect as the pending snap target.
+           No bond is created for layout snaps (they're independent of
+           the edge-to-edge bond system). */
+        pendingSnappedRect.current = hoveredZone.rect
         pendingBond.current = null
-        pendingSnappedRect.current = null
+      } else {
+        /* No layout zone — run normal snap detection against non-group windows */
+        const proposedRect = { x: newX, y: newY, width, height }
+        const candidate = snap.getSnapTarget(windowId, proposedRect)
+
+        if (candidate) {
+          /* Candidate within SNAP_THRESHOLD — show preview and store pending snap.
+             The window follows the cursor freely; the ghost preview shows where
+             it will land on release. No auto-jump during drag. */
+          snap.showSnapPreview(candidate.snappedRect)
+          pendingBond.current = candidate.bond
+          pendingSnappedRect.current = candidate.snappedRect
+        } else {
+          /* No snap candidate — clear preview and pending state */
+          snap.clearSnapPreview()
+          pendingBond.current = null
+          pendingSnappedRect.current = null
+        }
       }
     }
 
@@ -170,8 +192,46 @@ export default function useSnapDrag(windowId, initialPosition) {
       dragging.current = false
       document.body.style.userSelect = ''
 
-      if (pendingBond.current && pendingSnappedRect.current) {
-        /* Animate the window from its current position to the snapped position */
+      /* ── Layout zone snap ──
+         If a layout zone was hovered on release, snap the window to that
+         zone's rect — resizing AND repositioning. This is independent of
+         the edge-to-edge bond system. */
+      const hoveredZone = snap.layoutZoneHover.current
+      if (hoveredZone && pendingSnappedRect.current) {
+        const el = snap.elementRefs.current.get(windowId)
+        const zoneRect = pendingSnappedRect.current
+
+        /* Update React state for position and size */
+        setPosition({ x: zoneRect.x, y: zoneRect.y })
+        const sizeSetter = snap.sizeSetters.current.get(windowId)
+        if (sizeSetter) {
+          sizeSetter({ width: zoneRect.width, height: zoneRect.height })
+        }
+
+        /* Update the snap registry with the final rect */
+        snap.updateRect(windowId, zoneRect)
+
+        /* Break any existing bonds for this window since layout snap
+           is independent of the edge-to-edge bond system */
+        snap.breakBondsForWindow(windowId)
+
+        /* Animate the DOM element to the zone rect with GSAP */
+        if (el) {
+          gsap.to(el, {
+            left: zoneRect.x,
+            top: zoneRect.y,
+            width: zoneRect.width,
+            height: zoneRect.height,
+            duration: 0.2,
+            ease: 'power2.out',
+          })
+        }
+
+        pendingBond.current = null
+        pendingSnappedRect.current = null
+      } else if (pendingBond.current && pendingSnappedRect.current) {
+        /* ── Normal edge-to-edge snap ──
+           Animate the window from its current position to the snapped position */
         const el = snap.elementRefs.current.get(windowId)
         const bond = pendingBond.current
         const snappedRect = pendingSnappedRect.current
@@ -200,8 +260,9 @@ export default function useSnapDrag(windowId, initialPosition) {
         pendingSnappedRect.current = null
       }
 
-      /* Clear snap preview after drag ends */
+      /* Always clear snap preview and hide layout bar on mouseup */
       snap.clearSnapPreview()
+      snap.hideLayoutBar()
     }
 
     /* Attach listeners to document so drag continues even if cursor leaves the element */

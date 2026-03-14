@@ -11,6 +11,7 @@ import CornerLauncher from './components/CornerLauncher.jsx'
 import { SnapProvider } from './contexts/SnapContext.jsx'
 import SnapPreview from './components/SnapPreview.jsx'
 import SnapSeams from './components/SnapSeams.jsx'
+import SnapLayoutBar from './components/SnapLayoutBar.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 
@@ -214,9 +215,11 @@ function App() {
 
             {/* ── Snap Overlays ──
                 Preview ghost rectangle appears during drag when near another window's edge.
-                Seams render along bonded edges with double-click-to-unmerge. */}
+                Seams render along bonded edges with double-click-to-unmerge.
+                Layout bar slides down from top when dragging a window near the top edge. */}
             <SnapPreview />
             <SnapSeams />
+            <SnapLayoutBar />
           </SnapProvider>
         </>
       } />
