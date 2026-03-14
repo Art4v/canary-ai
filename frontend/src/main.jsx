@@ -10,7 +10,7 @@ import App from './App.jsx'
    can use React Router hooks (useNavigate, Link, Routes, etc.) */
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/dashboard">
       <ThemeProvider>
         <App />
       </ThemeProvider>

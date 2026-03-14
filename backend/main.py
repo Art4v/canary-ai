@@ -11,7 +11,8 @@ to CSV files that are wiped on every server startup.
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from datetime import datetime, timedelta, timezone
 import yfinance as yf
 import asyncio
@@ -31,6 +32,12 @@ from schemas.response import error_response
 load_dotenv()
 
 app = FastAPI()
+
+# Absolute path to the built React frontend — resolves correctly regardless
+# of the working directory (e.g. `python main.py` from backend/ or
+# `python backend/main.py` from repo root).
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+_FRONTEND_DIST = os.path.join(_BACKEND_DIR, "..", "frontend", "dist")
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -594,6 +601,28 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+# ── Dashboard (React SPA) ─────────────────────────────────────────────────
+# Serve index.html for all /dashboard/* paths so React Router handles
+# client-side navigation (login, register, etc.).
+
+@app.get("/dashboard/{full_path:path}")
+@app.get("/dashboard")
+async def serve_dashboard(full_path: str = ""):
+    """
+    Serve the React SPA for all /dashboard/* paths.
+
+    If full_path points to an actual file on disk (e.g. assets/index-xxx.js),
+    serve that file directly. Otherwise, serve index.html so React Router
+    can handle the client-side route.
+    """
+    # Check if the path corresponds to a real static file (JS, CSS, images)
+    file_path = os.path.join(_FRONTEND_DIST, full_path)
+    if full_path and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # Fall back to index.html for SPA client-side routing
+    return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"), media_type="text/html")
+
+
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -640,6 +669,12 @@ async def shutdown_event():
 
     stock_tasks.clear()
     seen_news_ids.clear()
+
+
+# ── Static file mount for built frontend assets (JS, CSS, images) ────────
+# Must come after all route definitions. FastAPI checks explicit routes
+# first; the mount only serves files that actually exist on disk.
+app.mount("/dashboard", StaticFiles(directory=_FRONTEND_DIST), name="dashboard-static")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
