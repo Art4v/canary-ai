@@ -18,6 +18,7 @@ import os
 import shutil
 import requests
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
 
@@ -28,7 +29,7 @@ app = FastAPI()
 DATA_DIR = "data"
 STOCK_DATA_DIR = os.path.join(DATA_DIR, "stock_training_data")
 NEWS_DIR = os.path.join(DATA_DIR, "news")
-PREDICTIONS_DIR = "predictions"
+PREDICTIONS_DIR = "trades"
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news"
@@ -41,6 +42,15 @@ POLL_INTERVAL_SECONDS = 60
 # published after the simulated time. When 0 or unset, behaviour is
 # identical to real-time.
 TIME_REWIND_HOURS = float(os.getenv("TIME_REWIND_HOURS", "0"))
+
+# Supabase connection — reads URL and anon/service key from .env.
+# When either value is missing, supabase_client stays None and the
+# /database/* endpoints return 503 instead of crashing the server.
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+supabase_client: Client | None = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 NEWS_CSV_COLUMNS = [
     "id", "category", "datetime", "headline",
@@ -348,7 +358,7 @@ async def _run_prediction_loop() -> None:
                 else:
                     print(
                         f"[Prediction] Cycle complete — "
-                        f"trades.csv updated in {PREDICTIONS_DIR}/",
+                        f"portfolio.csv updated in {PREDICTIONS_DIR}/",
                         flush=True,
                     )
 
@@ -495,8 +505,8 @@ async def start_prediction():
     cycle; skips with a warning if none are found).
 
     Writes each cycle:
-      - predictions/trades.csv  — trade actions (BUY / SELL / HOLD)
-      - predictions/portfolio.csv   — updated position snapshot
+      - trades/portfolio.csv  — trade actions (BUY / SELL / HOLD)
+      - trades/holdings.csv   — updated position snapshot
 
     Returns 409 if the prediction loop is already running.
     """
@@ -549,7 +559,7 @@ def prediction_status():
       running         — bool, whether the loop is active
       binary          — absolute path the server will invoke
       binary_exists   — bool, whether that binary is compiled and on disk
-      output_dir      — directory where trades.csv / portfolio.csv are written
+      output_dir      — directory where portfolio.csv / holdings.csv are written
       poll_interval_s — seconds between prediction cycles
       tracked_tickers — tickers that will be passed on the next run
     """
@@ -563,6 +573,61 @@ def prediction_status():
     }
 
 
+# ── Database endpoints ────────────────────────────────────────────────────
+# Read-only endpoints that proxy SELECT * queries to the Supabase PostgreSQL
+# database. Each returns {"data": [rows]} on success or 503 when the
+# Supabase client is not configured (missing SUPABASE_URL / SUPABASE_KEY).
+# These are sync defs — supabase-py is synchronous and FastAPI
+# automatically runs sync handlers in a threadpool.
+
+@app.get("/database/users")
+def get_users():
+    """Return all rows from the Supabase ``users`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("users").select("*").execute()
+    return {"data": response.data}
+
+
+@app.get("/database/portfolios")
+def get_portfolios():
+    """Return all rows from the Supabase ``portfolios`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("portfolios").select("*").execute()
+    return {"data": response.data}
+
+
+@app.get("/database/holdings")
+def get_holdings():
+    """Return all rows from the Supabase ``holdings`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("holdings").select("*").execute()
+    return {"data": response.data}
+
+
+@app.get("/database/transactions")
+def get_transactions():
+    """Return all rows from the Supabase ``transactions`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("transactions").select("*").execute()
+    return {"data": response.data}
+
+
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -573,8 +638,8 @@ async def startup_event():
             shutil.rmtree(directory)
         os.makedirs(directory, exist_ok=True)
 
-    # Ensure the predictions output directory exists. Not wiped on restart
-    # so portfolio.csv survives across server restarts for trade continuity.
+    # Ensure the trades output directory exists. Not wiped on restart
+    # so holdings.csv survives across server restarts for trade continuity.
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
 
     if TIME_REWIND_HOURS > 0:

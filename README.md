@@ -9,6 +9,7 @@ A hackathon project built for UNIHACK 2026.
 | Frontend | React 19 + Vite 8           |
 | Backend  | FastAPI + Uvicorn (Python)  |
 | Prediction | C++17 (g++)               |
+| Database | Supabase (PostgreSQL)       |
 | Data     | yfinance, Finnhub API       |
 | Icons    | Lucide React                |
 | Animation| GSAP                        |
@@ -46,8 +47,13 @@ A hackathon project built for UNIHACK 2026.
 - **Prediction endpoints** — start/stop a background loop that re-runs the C++ prediction after all tracked stocks have fresh data
   - `POST /predict` — start the prediction loop (409 if already running, 400 if no stocks tracked)
   - `DELETE /predict` — stop the prediction loop (404 if not running)
-  - Results are written to `backend/predictions/portfolio.csv`
+  - Results are written to `backend/trades/portfolio.csv`
   - The prediction loop automatically picks up newly added/removed tickers each cycle
+- **Supabase database endpoints** — read-only access to the Supabase PostgreSQL database (returns 503 when credentials are not configured)
+  - `GET /database/users` — all rows from the `users` table
+  - `GET /database/portfolios` — all rows from the `portfolios` table
+  - `GET /database/holdings` — all rows from the `holdings` table
+  - `GET /database/transactions` — all rows from the `transactions` table
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -83,7 +89,7 @@ unihack-hackathon-submission/
 │   ├── prediction/              # C++ stock prediction module
 │   │   ├── prediction.cpp       # CSV loader, parser, and prediction driver
 │   │   └── test_data/           # Test CSV files (AAPL.csv, BOBS.csv, MSFT.csv)
-│   ├── predictions/             # Prediction output directory (auto-created at runtime)
+│   ├── trades/                  # Trade output directory (auto-created at runtime)
 │   │   ├── holdings.csv         # Current portfolio positions (auto-generated)
 │   │   └── portfolio.csv        # Trade decisions output (auto-generated)
 │   ├── .env.example             # Template for required environment variables
@@ -130,7 +136,7 @@ unihack-hackathon-submission/
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then edit .env and add your Finnhub API key
+cp .env.example .env   # then edit .env and add your Finnhub API key + Supabase credentials
 python main.py
 ```
 
