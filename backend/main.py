@@ -27,9 +27,6 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 STOCK_DATA_DIR = os.path.join(DATA_DIR, "stock_training_data")
 NEWS_DIR = os.path.join(DATA_DIR, "news")
 
-PREDICTIONS_DIR = os.path.join(BASE_DIR, "predictions")
-PREDICTION_EXE = os.path.join(BASE_DIR, "prediction", "prediction.exe")
-
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news"
 
@@ -65,13 +62,6 @@ def _simulated_now() -> datetime:
 stock_tasks: dict[str, asyncio.Task] = {}
 
 news_task: asyncio.Task | None = None
-
-# Background task running the C++ prediction loop.
-prediction_task: asyncio.Task | None = None
-
-# Per-ticker events set after each data write; the prediction loop
-# waits for ALL events before running the C++ prediction executable.
-stock_data_events: dict[str, asyncio.Event] = {}
 
 # Tracks Finnhub article IDs already persisted so duplicate articles
 # across polling cycles are never written twice.
@@ -134,10 +124,6 @@ async def _track_ticker(ticker: str) -> None:
                     market_cap,
                 ])
 
-    # Signal that backlog data is available for prediction
-    if ticker in stock_data_events:
-        stock_data_events[ticker].set()
-
     # ── Live polling loop ────────────────────────────────────────────
     try:
         while True:
@@ -173,10 +159,6 @@ async def _track_ticker(ticker: str) -> None:
                         latest_candle["Volume"],
                         poll_market_cap,
                     ])
-
-            # Signal that fresh data is available for prediction
-            if ticker in stock_data_events:
-                stock_data_events[ticker].set()
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
@@ -292,9 +274,6 @@ async def start_tracking(ticker: str):
     if ticker in stock_tasks:
         raise HTTPException(status_code=409, detail=f"{ticker} is already being tracked")
 
-    # Create a data-ready event so the prediction loop can wait for this ticker
-    stock_data_events[ticker] = asyncio.Event()
-
     task = asyncio.create_task(_track_ticker(ticker))
     stock_tasks[ticker] = task
 
@@ -321,11 +300,6 @@ async def stop_tracking(ticker: str):
     stock_tasks[ticker].cancel()
     del stock_tasks[ticker]
 
-    # Set the event (to unblock any waiting prediction loop) then remove it
-    if ticker in stock_data_events:
-        stock_data_events[ticker].set()
-        del stock_data_events[ticker]
-
     return {"message": f"Stopped tracking {ticker}"}
 
 
@@ -338,114 +312,6 @@ def list_tracked():
     sorted list of uppercase ticker strings.
     """
     return {"tracked": sorted(stock_tasks.keys())}
-
-
-# ── Prediction loop ───────────────────────────────────────────────────────────
-
-async def _run_prediction_loop() -> None:
-    """
-    Background task that waits for all tracked stocks to have fresh data,
-    then runs the C++ prediction executable. Repeats until cancelled or
-    no stocks remain.
-
-    Each cycle re-snapshots current tickers so newly added/removed stocks
-    are picked up automatically.
-    """
-    try:
-        while True:
-            # Snapshot current tickers from active tracking tasks
-            current_tickers = list(stock_tasks.keys())
-
-            # Auto-stop if no stocks are being tracked
-            if not current_tickers:
-                print("[Canary AI] Prediction loop: no stocks tracked, stopping.")
-                break
-
-            # Ensure events exist for all current tickers (handles newly added ones)
-            for ticker in current_tickers:
-                if ticker not in stock_data_events:
-                    stock_data_events[ticker] = asyncio.Event()
-
-            # Wait for ALL tracked tickers to signal fresh data
-            await asyncio.gather(
-                *(stock_data_events[t].wait() for t in current_tickers
-                  if t in stock_data_events)
-            )
-
-            # Clear all events so the next cycle waits for new data
-            for ticker in current_tickers:
-                if ticker in stock_data_events:
-                    stock_data_events[ticker].clear()
-
-            # Build command: prediction.exe <data_dir> <output_dir> <TICKER1> ...
-            cmd = [PREDICTION_EXE, STOCK_DATA_DIR, PREDICTIONS_DIR] + current_tickers
-            print(f"[Canary AI] Running prediction: {' '.join(cmd)}")
-
-            # Run the C++ executable as a subprocess
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-
-            # Log the result
-            if proc.returncode == 0:
-                print(f"[Canary AI] Prediction completed successfully.")
-                if stdout:
-                    print(stdout.decode())
-            else:
-                print(f"[Canary AI] Prediction failed (exit code {proc.returncode}).")
-                if stderr:
-                    print(stderr.decode())
-
-    except asyncio.CancelledError:
-        pass
-
-
-# ── Prediction endpoints ─────────────────────────────────────────────────────
-
-@app.post("/predict")
-async def start_prediction():
-    """
-    Start the background prediction loop.
-
-    The loop waits for all tracked stocks to have fresh data, then runs
-    the C++ prediction executable. Results are written to
-    backend/predictions/portfolio.csv.
-
-    Returns 200 on success, 409 if prediction is already running, or
-    400 if no stocks are currently being tracked.
-    """
-    global prediction_task
-
-    if prediction_task is not None and not prediction_task.done():
-        raise HTTPException(status_code=409, detail="Prediction is already running")
-
-    if not stock_tasks:
-        raise HTTPException(status_code=400, detail="No stocks are being tracked")
-
-    prediction_task = asyncio.create_task(_run_prediction_loop())
-
-    return {"message": "Started prediction loop"}
-
-
-@app.delete("/predict")
-async def stop_prediction():
-    """
-    Stop the background prediction loop.
-
-    Returns 200 on success or 404 if prediction is not running.
-    """
-    global prediction_task
-
-    if prediction_task is None or prediction_task.done():
-        raise HTTPException(status_code=404, detail="Prediction is not running")
-
-    prediction_task.cancel()
-    prediction_task = None
-
-    return {"message": "Stopped prediction loop"}
 
 
 # ── News endpoints ────────────────────────────────────────────────────────────
@@ -501,14 +367,11 @@ async def stop_news_tracking():
 
 @app.on_event("startup")
 async def startup_event():
-    """Wipe stock/news data from previous runs; preserve predictions across restarts."""
+    """Wipe all persisted data from previous runs so each server start is fresh."""
     for directory in (STOCK_DATA_DIR, NEWS_DIR):
         if os.path.exists(directory):
             shutil.rmtree(directory)
         os.makedirs(directory, exist_ok=True)
-
-    # Predictions directory persists across restarts (holdings state matters)
-    os.makedirs(PREDICTIONS_DIR, exist_ok=True)
 
     # Log the simulated time so operators can confirm the rewind is active.
     if TIME_REWIND_HOURS > 0:
@@ -520,8 +383,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cancel every running background task (stock + news + prediction) on shutdown."""
-    global news_task, prediction_task
+    """Cancel every running background task (stock + news) on shutdown."""
+    global news_task
 
     for task in stock_tasks.values():
         task.cancel()
@@ -532,17 +395,10 @@ async def shutdown_event():
         all_tasks.append(news_task)
         news_task = None
 
-    # Cancel prediction loop if running
-    if prediction_task is not None and not prediction_task.done():
-        prediction_task.cancel()
-        all_tasks.append(prediction_task)
-        prediction_task = None
-
     # Await cancellation so tasks can run their CancelledError handlers.
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
     stock_tasks.clear()
-    stock_data_events.clear()
     seen_news_ids.clear()
 
 
