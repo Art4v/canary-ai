@@ -35,10 +35,10 @@
   --color-settings-dark: #766a8e;
   --color-settings-light: #bcb1d3;
 
-  /* Account section — warm yellow palette */
-  --color-account-primary: #ebe4af;
-  --color-account-dark: #8e896b;
-  --color-account-light: #d3ceb1;
+  /* Help section — warm yellow palette */
+  --color-help-primary: #ebe4af;
+  --color-help-dark: #8e896b;
+  --color-help-light: #d3ceb1;
 
   /* Shadows */
   --shadow-card: 0 16px 50px rgba(0, 0, 0, 0.14);

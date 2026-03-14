@@ -5,7 +5,7 @@ import {
   ArrowLeftRight,
   Briefcase,
   Settings,
-  User,
+  CircleHelp,
 } from 'lucide-react'
 /* Vite asset import — resolved to a hashed URL at build time */
 import logoCanary from '@/assets/logocanary.PNG'
@@ -13,17 +13,17 @@ import './Dock.css'
 
 /**
  * NAV_ITEMS — configuration for each navigation button.
- * Order matches the reference design: Portfolio, Chat, Account, Settings, Trades.
+ * Order (left to right): Chat, Trades, Portfolio, Settings, Help.
  * Each entry maps a section name to its Lucide icon component
  * and the CSS custom-property prefix used for its color tokens
  * (e.g. "chats" → --color-chats-primary / dark / light).
  */
 const NAV_ITEMS = [
-  { key: 'portfolio', label: 'Portfolio', Icon: Briefcase,      color: 'portfolio' },
   { key: 'chats',     label: 'Chat',      Icon: MessageCircle,  color: 'chats'     },
-  { key: 'account',   label: 'Account',   Icon: User,           color: 'account'   },
-  { key: 'settings',  label: 'Settings',  Icon: Settings,       color: 'settings'  },
   { key: 'trades',    label: 'Trades',    Icon: ArrowLeftRight,  color: 'trades'    },
+  { key: 'portfolio', label: 'Portfolio', Icon: Briefcase,      color: 'portfolio' },
+  { key: 'settings',  label: 'Settings',  Icon: Settings,       color: 'settings'  },
+  { key: 'help',      label: 'Help',      Icon: CircleHelp,     color: 'help'      },
 ]
 
 /**
