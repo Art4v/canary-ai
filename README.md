@@ -66,6 +66,7 @@ A hackathon project built for UNIHACK 2026.
 - **Cloud-shaped navigation dock** — large (~750×300px) cloud dock positioned just below center of the viewport, built with inline SVG ellipses (no drop shadow); contains the Canary logo with a GSAP bobbing animation, a "Canary AI" branding label, and 5 cartoony, puffy nav buttons (Chat, Trades, Portfolio, Settings, Help) styled as rounded squares with a 3D embossed effect (darker border, lighter fill, bottom shadow) and text labels; cloud fill uses `var(--color-cloud)` so it adapts to day/night mode automatically
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
 - **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
+- **PortfolioWindow** — yellow/cream-themed portfolio overview window with a summary card (total portfolio value, percentage change, market status), two placeholder graph cards, and a dark footer strip; opens from the Dock "Portfolio" button and renders inside the draggable/resizable `Window` shell
 - **Modular feature folders** — scaffolded directories for `dock`, `portfolio`, `sky`, and `window` features
 
 ## Project Structure
@@ -90,14 +91,15 @@ unihack-hackathon-submission/
 │   ├── public/                # Static assets (favicon, icons)
 │   ├── src/
 │   │   ├── assets/
-│   │   │   └── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
+│   │   │   ├── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
+│   │   │   └── portfolio/     # Portfolio icon assets (portfolio_close.png, portfolio_full.png)
 │   │   ├── components/        # Reusable UI components (GlassCard)
 │   │   ├── data/              # Data files
 │   │   ├── features/          # Feature modules
 │   │   │   ├── dock/          # Cloud-shaped navigation dock (Dock.jsx, Dock.css)
 │   │   │   ├── portfolio/     # Portfolio feature (scaffold)
 │   │   │   ├── sky/           # Animated sky background, clouds, birds
-│   │   │   └── window/        # Window shell, TradesWindow, ChatWindow
+│   │   │   └── window/        # Window shell, TradesWindow, ChatWindow, PortfolioWindow
 │   │   ├── hooks/             # Custom React hooks (useTheme)
 │   │   ├── styles/            # Global styles (base.css, tokens.css)
 │   │   ├── utils/             # Utility functions

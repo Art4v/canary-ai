@@ -4,6 +4,7 @@ import ThemeToggle from './components/ThemeToggle.jsx'
 import Dock from './features/dock/Dock.jsx'
 import TradesWindow from './features/window/TradesWindow.jsx'
 import ChatWindow from './features/window/ChatWindow.jsx'
+import PortfolioWindow from './features/window/PortfolioWindow.jsx'
 
 /**
  * App — root component that orchestrates the sky background, theme toggle,
@@ -39,6 +40,11 @@ function App() {
       {/* Chat window — purple-themed AI chat interface */}
       {activeSection === 'chats' && (
         <ChatWindow onClose={() => setActiveSection(null)} />
+      )}
+
+      {/* Portfolio window — yellow/cream-themed portfolio overview */}
+      {activeSection === 'portfolio' && (
+        <PortfolioWindow onClose={() => setActiveSection(null)} />
       )}
     </>
   )

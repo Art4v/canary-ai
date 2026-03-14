@@ -26,20 +26,20 @@
   --color-trades-dark: #80906c;
   --color-trades-light: #c4d2b1;
 
-  /* Portfolio section — blue-purple palette */
-  --color-portfolio-primary:  #c6b2ed;
-  --color-portfolio-dark: #75698d;
-  --color-portfolio-light: #bcb1d3;
+  /* Portfolio section — warm yellow palette */
+  --color-portfolio-primary:  #ebe4af;
+  --color-portfolio-dark: #8e896b;
+  --color-portfolio-light: #d3ceb1;
 
   /* Settings section — lavender palette */
   --color-settings-primary: #c4b0eb;
   --color-settings-dark: #766a8e;
   --color-settings-light: #bcb1d3;
 
-  /* Help section — warm yellow palette */
-  --color-help-primary: #ebe4af;
-  --color-help-dark: #8e896b;
-  --color-help-light: #d3ceb1;
+  /* Help section — blue-purple palette */
+  --color-help-primary: #c6b2ed;
+  --color-help-dark: #75698d;
+  --color-help-light: #bcb1d3;
 
   /* Shadows */
   --shadow-card: 0 16px 50px rgba(0, 0, 0, 0.14);
