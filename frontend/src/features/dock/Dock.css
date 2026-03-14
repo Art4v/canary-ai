@@ -1,0 +1,141 @@
+/* ── Dock Container ──
+   Positioned just below center of the viewport (top: 55%).
+   z-index 200 keeps it above ThemeToggle (100) and all sky layers.
+   Sized at 750×300px for a large, prominent dock. */
+.dock {
+  position: fixed;
+  top: 55%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 200;
+  width: 750px;
+  height: 300px;
+  pointer-events: none; /* let clicks pass through empty space */
+}
+
+/* ── Cloud SVG Backdrop ──
+   Fills the entire dock container. The SVG ellipses form the cloud shape. */
+.dock-cloud {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto; /* cloud itself blocks clicks */
+}
+
+/* ── Content Overlay ──
+   Positioned above the cloud SVG so logo and buttons are clickable.
+   Extra padding-top centers content within the taller cloud. */
+.dock-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 30px;
+  pointer-events: none; /* container is transparent to clicks */
+}
+
+/* ── Canary Logo ──
+   Scaled up to 88px to match the larger dock.
+   Positioned at the top-center of the cloud puff.
+   GSAP animates this element with a gentle vertical bob. */
+.dock-logo {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  pointer-events: auto;
+  margin-bottom: 4px;
+}
+
+/* ── Canary AI Label ──
+   Branding text between the logo and navigation buttons.
+   Uses design tokens for consistent sizing and color. */
+.dock-label {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+  pointer-events: none;
+}
+
+/* ── Navigation Row ──
+   Horizontal row of 5 evenly-spaced puffy buttons.
+   Wider gap (12px) to accommodate the larger button size. */
+.dock-nav {
+  display: flex;
+  gap: 16px;
+  pointer-events: auto;
+}
+
+/* ── Navigation Button ──
+   64px rounded square with a 3D puffy/embossed effect.
+   Uses --btn-primary / --btn-dark / --btn-light custom properties
+   set via inline style for per-section coloring.
+   The border + bottom shadow create a cartoony raised look,
+   and the inner highlight adds a puffy, bubbly feel. */
+.dock-nav-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  border: 3px solid var(--btn-dark);
+  background: var(--btn-light);
+  color: var(--btn-dark);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s, color 0.2s, transform 0.15s, box-shadow 0.15s;
+
+  /* 3D puffy effect: bottom shadow for raised look + inner highlight for puffiness */
+  box-shadow:
+    0 4px 0 var(--btn-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+}
+
+/* ── Text Label ──
+   Small uppercase label below the icon inside each button. */
+.dock-nav-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--btn-dark);
+  margin-top: 1px;
+  line-height: 1;
+}
+
+/* ── Hover State ──
+   Slight scale-up with brighter fill and softer shadow
+   for a playful, responsive feel. */
+.dock-nav-btn:hover {
+  background: var(--btn-light);
+  filter: brightness(1.1);
+  color: var(--btn-dark);
+  transform: scale(1.08) translateY(-2px);
+  box-shadow:
+    0 6px 0 var(--btn-dark),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* ── Active / Selected State ──
+   Primary section color fills the background, stronger shadow for depth. */
+.dock-nav-btn--active {
+  background: var(--btn-primary);
+  color: var(--btn-dark);
+  box-shadow:
+    0 4px 0 var(--btn-dark),
+    0 2px 10px rgba(0, 0, 0, 0.2),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* Active + hover keeps the primary color but adds the scale effect */
+.dock-nav-btn--active:hover {
+  background: var(--btn-primary);
+  transform: scale(1.08) translateY(-2px);
+}
