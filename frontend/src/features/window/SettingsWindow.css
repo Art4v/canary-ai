@@ -1,0 +1,200 @@
+/* ══════════════════════════════════════════════════
+   SettingsWindow — Lavender-themed settings panel
+   ══════════════════════════════════════════════════ */
+
+/* ── Header Override ──
+   Override the generic Window header to use the settings bar shade,
+   keeping the header visually distinct from the grid body
+   (same pattern as ChatWindow). */
+.settings-window-wrapper .window-header {
+  background: var(--color-settings-bar);
+}
+
+/* ── Settings Grid ──
+   3-column layout: label | control | action.
+   Each settings row occupies one triplet of grid cells.
+   align-content: start keeps rows pinned to the top when content is short. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  flex: 1;
+  overflow-y: auto;
+  align-content: start;
+  background: var(--color-settings-primary);
+}
+
+/* ── Grid Cell ──
+   Shared styling for every cell in the grid —
+   rounded rectangle with the container color, flex-centered content. */
+.settings-cell {
+  background: var(--color-settings-container);
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+}
+
+/* ── Label Cell ──
+   Left column — bold setting name, dark color for contrast.
+   nowrap prevents the label from wrapping onto two lines. */
+.settings-label {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-settings-dark);
+  white-space: nowrap;
+  font-size: var(--font-size-base);
+}
+
+/* ── Text / Password Input ──
+   Middle column control — fills available width.
+   Pill-shaped with a 2px border using settings color tokens.
+   Mirrors the .chat-input styling pattern. */
+.settings-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 2px solid var(--color-settings-dark);
+  background: var(--color-settings-container);
+  color: var(--color-settings-text, var(--color-text));
+  font-size: var(--font-size-base);
+  font-family: var(--font-family);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+/* Focus state — highlight border with primary lavender */
+.settings-input:focus {
+  border-color: var(--color-settings-primary);
+}
+
+/* Placeholder text — semi-transparent for subtlety */
+.settings-input::placeholder {
+  color: var(--color-settings-dark);
+  opacity: 0.6;
+}
+
+/* ── Select Dropdown ──
+   Same base styling as the text input.
+   appearance: none removes native browser chrome so we can show
+   a custom SVG chevron arrow on the right side. */
+.settings-select {
+  width: 100%;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 2px solid var(--color-settings-dark);
+  background: var(--color-settings-container);
+  color: var(--color-settings-text, var(--color-text));
+  font-size: var(--font-size-base);
+  font-family: var(--font-family);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  /* Custom chevron arrow — inline SVG encoded as a data URI */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23766a8e' stroke-width='2' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  transition: border-color 0.2s;
+}
+
+/* Focus state for the dropdown */
+.settings-select:focus {
+  border-color: var(--color-settings-primary);
+}
+
+/* ── Save Button ──
+   3D puffy button matching the existing app style —
+   darker border, lighter fill, bottom box-shadow for depth,
+   inner highlight for a glossy effect. */
+.settings-save-btn {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 3px solid var(--color-settings-dark);
+  background: var(--color-settings-container);
+  color: var(--color-settings-dark);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-family);
+  cursor: pointer;
+  white-space: nowrap;
+  /* 3D puffy effect — bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 var(--color-settings-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+
+/* Hover — lift upward and deepen shadow for a raised effect */
+.settings-save-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+  box-shadow:
+    0 6px 0 var(--color-settings-dark),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* Active — press down for tactile click feedback */
+.settings-save-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 0 var(--color-settings-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* ── Toggle Switch ──
+   CSS-only toggle built with a hidden checkbox, a pill-shaped track,
+   and a sliding circular knob.
+   The label wraps the hidden input so clicking anywhere toggles the state. */
+.settings-toggle {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+
+/* Hide the native checkbox — it's used for state only */
+.settings-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+/* ── Toggle Track (slider) ──
+   Pill-shaped background that changes color when checked.
+   Default (unchecked) uses the dark settings shade. */
+.settings-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--color-settings-dark);
+  border-radius: 28px;
+  transition: background 0.3s;
+}
+
+/* ── Toggle Knob ──
+   Circular white knob positioned inside the track.
+   Slides from left to right when checked. */
+.settings-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background: var(--color-surface);
+  border-radius: 50%;
+  transition: transform 0.3s;
+}
+
+/* Checked state — track turns primary lavender */
+.settings-toggle input:checked + .settings-toggle-slider {
+  background: var(--color-settings-primary);
+}
+
+/* Checked state — knob slides to the right end of the track */
+.settings-toggle input:checked + .settings-toggle-slider::before {
+  transform: translateX(24px);
+}

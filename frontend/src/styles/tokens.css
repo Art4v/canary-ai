@@ -35,6 +35,8 @@
   --color-settings-primary: #c4b0eb;
   --color-settings-dark: #766a8e;
   --color-settings-light: #bcb1d3;
+  --color-settings-bar: #bdb0d5;         /* top & bottom bars of the settings window */
+  --color-settings-container: #dccff5;   /* individual setting cells, inputs, and save buttons */
 
   /* Help section — warm yellow palette */
   --color-help-primary: #ebe4af;
