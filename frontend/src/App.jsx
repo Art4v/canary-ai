@@ -4,6 +4,7 @@ import ThemeToggle from './components/ThemeToggle.jsx'
 import Dock from './features/dock/Dock.jsx'
 import TradesWindow from './features/window/TradesWindow.jsx'
 import ChatWindow from './features/window/ChatWindow.jsx'
+import PortfolioWindow from './features/window/PortfolioWindow.jsx'
 import SettingsWindow from './features/window/SettingsWindow.jsx'
 
 /**
@@ -41,7 +42,11 @@ function App() {
       {activeSection === 'chats' && (
         <ChatWindow onClose={() => setActiveSection(null)} />
       )}
-
+      {/* Portfolio window — yellow/cream-themed portfolio overview */}
+      {activeSection === 'portfolio' && (
+        <PortfolioWindow onClose={() => setActiveSection(null)} />
+      )}
+      
       {/* Settings window — lavender-themed settings panel */}
       {activeSection === 'settings' && (
         <SettingsWindow onClose={() => setActiveSection(null)} />
