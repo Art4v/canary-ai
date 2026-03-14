@@ -1,0 +1,218 @@
+/* ══════════════════════════════════════════════════════════════
+   AuthPages — shared styles for Login & Register pages
+   Glassmorphic card centered over the animated sky background
+   with puffy 3D form controls matching the app's aesthetic.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Page Container ──
+   Full viewport, centers the auth card both horizontally and
+   vertically. z-index: 0 keeps it behind fixed UI like modals. */
+.auth-page {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* ── Back Button ──
+   Fixed top-left puffy 3D circle (42px) matching the CornerLauncher
+   trigger style. Contains an ArrowLeft Lucide icon.
+   z-index: 100 keeps it above the sky and card layers. */
+.auth-back-btn {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 100;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 3px solid var(--color-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-text);
+  /* 3D puffy effect: bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s, filter 0.15s, box-shadow 0.15s;
+}
+
+/* Back button hover — slight lift and brightness boost */
+.auth-back-btn:hover {
+  transform: scale(1.08) translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow:
+    0 6px 0 var(--color-border),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* Back button active — press down for tactile feedback */
+.auth-back-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* ── Glassmorphic Card ──
+   Centered form container with backdrop blur, rounded corners,
+   and the standard card shadow. Max-width ensures mobile friendliness. */
+.auth-card {
+  position: relative;
+  z-index: 10;
+  background: var(--color-surface);
+  backdrop-filter: blur(12px);
+  border-radius: var(--radius-card);
+  border: 3px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  padding: 40px;
+  width: 400px;
+  max-width: 90vw;
+}
+
+/* ── Card Title ──
+   Bold, centered heading inside the card */
+.auth-card h1 {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+  text-align: center;
+  margin: 0 0 var(--space-6) 0;
+  font-size: var(--font-size-2xl);
+  font-family: var(--font-family);
+}
+
+/* ── Form Layout ──
+   Stack form fields vertically with consistent spacing */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ── Field Group ──
+   Wraps a label + input pair */
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ── Label ──
+   Bold, muted, uppercase label text — small font for subtlety */
+.auth-label {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.5px;
+  font-family: var(--font-family);
+}
+
+/* ── Input Field ──
+   Full-width pill-shaped input matching the settings-input pattern.
+   2px border, rounded corners, focus highlight. */
+.auth-input {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+  font-family: var(--font-family);
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+/* Input focus — accent color highlight */
+.auth-input:focus {
+  border-color: var(--color-accent);
+}
+
+/* Input placeholder — semi-transparent text */
+.auth-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+/* ── Submit Button ──
+   Full-width puffy 3D button with accent blue background.
+   Darker border and bottom shadow for depth, inner highlight for gloss. */
+.auth-submit-btn {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 3px solid #3a58c7;
+  background: var(--color-accent);
+  color: #ffffff;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-family);
+  cursor: pointer;
+  margin-top: var(--space-2);
+  /* 3D puffy effect — bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 #3a58c7,
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+
+/* Submit hover — lift upward and deepen shadow */
+.auth-submit-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow:
+    0 6px 0 #3a58c7,
+    inset 0 2px 6px rgba(255, 255, 255, 0.4);
+}
+
+/* Submit active — press down for click feedback */
+.auth-submit-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 0 #3a58c7,
+    inset 0 2px 4px rgba(255, 255, 255, 0.2);
+}
+
+/* ── Footer Text ──
+   Centered text with a link to switch between login/register */
+.auth-footer {
+  text-align: center;
+  margin-top: var(--space-5);
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+}
+
+/* ── Toggle Link ──
+   Accent-colored link to switch between auth pages */
+.auth-link {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  transition: text-decoration 0.15s;
+}
+
+/* Link hover — underline for affordance */
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Error Message ──
+   Red text shown when form validation fails (e.g. password mismatch) */
+.auth-error {
+  color: var(--color-down);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  margin: 0;
+  font-family: var(--font-family);
+}

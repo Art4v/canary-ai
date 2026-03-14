@@ -4,12 +4,13 @@
 
 /* ── Container ──
    Fixed to a bottom corner of the viewport.
-   z-index 200 matches the Dock so launchers sit at the same layer.
-   min-width/height create an invisible hover zone so the trigger
-   can be revealed even though it starts scaled to 0. */
+   z-index 9999 ensures the launcher is always above windows (300+)
+   so the hover zone and trigger are reachable even when a window
+   covers the corner. The 64×64px hover zone is small enough that
+   the blocked corner area is negligible. */
 .corner-launcher {
   position: fixed;
-  z-index: 200;
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   align-items: center;
