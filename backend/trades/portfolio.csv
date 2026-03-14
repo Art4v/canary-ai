@@ -1,5 +1,5 @@
 ticker,action,amount_of_shares,total_change
-BOBS,buy,23,352.71
-TSLA,sell,38,-14916.52
-AAPL,hold,0,0.00
-CASH_RESERVE,summary,0,10000444.43
+BOBS,buy,11717,179680.20
+AAPL,buy,75,18804.00
+TSLA,buy,4,1567.82
+CASH_RESERVE,summary,0,241870.61

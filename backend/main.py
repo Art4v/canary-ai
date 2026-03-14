@@ -22,6 +22,13 @@ import shutil
 import requests
 from dotenv import load_dotenv
 
+# Supabase client singleton — used directly (outside FastAPI Depends) by
+# the prediction loop to sync portfolio state with the database.
+from dependencies import _supabase_client
+
+# Username-to-portfolio-ID resolver for fetching the right portfolio row.
+from crud.helpers import resolve_username_to_portfolio_id
+
 # Database routers — each provides full CRUD for one Supabase table.
 from routers import users as users_router
 from routers import portfolios as portfolios_router
@@ -94,6 +101,292 @@ prediction_task: asyncio.Task | None = None
 # Tracks Finnhub article IDs already persisted so duplicate articles
 # across polling cycles are never written twice.
 seen_news_ids: set[int] = set()
+
+# Cached portfolio_id for user "a" — resolved once from Supabase on the
+# first prediction cycle, then reused so we don't re-query every loop.
+_cached_portfolio_id: str | None = None
+
+
+# ── Supabase helpers for the prediction loop ─────────────────────────────────
+
+def get_supabase_client_direct():
+    """
+    Return the module-level Supabase client singleton.
+
+    Unlike ``get_supabase_client()`` in dependencies.py this does NOT use
+    FastAPI ``Depends`` — it is safe to call from plain async helpers and
+    background tasks.
+
+    Raises
+    ------
+    RuntimeError
+        If Supabase credentials are not configured (client is None).
+    """
+    if _supabase_client is None:
+        raise RuntimeError(
+            "Supabase client is not initialised — set SUPABASE_URL and "
+            "SUPABASE_KEY in .env"
+        )
+    return _supabase_client
+
+
+def fetch_portfolio_state(supabase) -> dict:
+    """
+    Fetch the current portfolio state from Supabase for user "a".
+
+    On the first call, resolves the username to a portfolio_id and caches
+    the result in ``_cached_portfolio_id`` so subsequent calls skip the
+    lookup.
+
+    Parameters
+    ----------
+    supabase : supabase.Client
+        Initialised Supabase client.
+
+    Returns
+    -------
+    dict
+        Keys: ``portfolio_id``, ``cash_reserve``, ``total_capital``,
+        ``investable_capital``.
+
+    Raises
+    ------
+    RuntimeError
+        If user "a" or their portfolio cannot be found.
+    """
+    global _cached_portfolio_id
+
+    # Resolve username → portfolio_id once, then cache.
+    if _cached_portfolio_id is None:
+        pid = resolve_username_to_portfolio_id(supabase, "a")
+        if pid is None:
+            raise RuntimeError("Could not resolve username 'a' to a portfolio_id")
+        _cached_portfolio_id = pid
+
+    portfolio_id = _cached_portfolio_id
+
+    # Fetch the portfolio row for the resolved ID.
+    response = (
+        supabase.table("portfolios")
+        .select("cash_reserve, current_portfolio_value")
+        .eq("portfolio_id", portfolio_id)
+        .execute()
+    )
+
+    if not response.data:
+        raise RuntimeError(f"No portfolio row found for portfolio_id={portfolio_id}")
+
+    row = response.data[0]
+    cash_reserve = float(row["cash_reserve"])
+    current_value = float(row["current_portfolio_value"])
+
+    # Derive capital figures from DB state.
+    total_capital = cash_reserve + current_value
+    investable_capital = total_capital * 0.90  # 90% of total is investable
+
+    return {
+        "portfolio_id": portfolio_id,
+        "cash_reserve": cash_reserve,
+        "total_capital": total_capital,
+        "investable_capital": investable_capital,
+    }
+
+
+def write_holdings_csv_from_db(supabase, portfolio_id: str) -> None:
+    """
+    Export current holdings from Supabase to ``trades/holdings.csv``.
+
+    The C++ binary reads this file to determine existing positions before
+    computing trade deltas.  Shares are cast to int because the C++
+    parser expects whole numbers.
+
+    Parameters
+    ----------
+    supabase : supabase.Client
+        Initialised Supabase client.
+    portfolio_id : str
+        Portfolio UUID whose holdings to export.
+    """
+    response = (
+        supabase.table("holdings")
+        .select("*")
+        .eq("portfolio_id", portfolio_id)
+        .execute()
+    )
+
+    csv_path = os.path.join(PREDICTIONS_DIR, "holdings.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["ticker", "shares", "avg_price", "last_updated"])
+        for h in (response.data or []):
+            writer.writerow([
+                h["ticker"],
+                int(h["quantity"]),          # DB stores float, C++ expects int
+                h["average_buy_price"],
+                h.get("updated_at", ""),
+            ])
+
+
+def apply_portfolio_csv_to_db(supabase, portfolio_id: str) -> None:
+    """
+    Read ``trades/portfolio.csv`` (written by the C++ binary) and sync
+    the results back into Supabase.
+
+    For each row in the CSV:
+      - **buy**  — upsert holding (insert or update qty + weighted avg
+        price) and log a buy transaction.
+      - **sell** — decrease holding qty (delete if ≤ 0) and log a sell
+        transaction.
+      - **hold** — log a hold transaction (no position change).
+      - **CASH_RESERVE** — update ``portfolios.cash_reserve`` and
+        recompute ``current_portfolio_value``.
+
+    Parameters
+    ----------
+    supabase : supabase.Client
+        Initialised Supabase client.
+    portfolio_id : str
+        Portfolio UUID to update.
+    """
+    csv_path = os.path.join(PREDICTIONS_DIR, "portfolio.csv")
+
+    # Guard: skip if C++ didn't produce the file or it's empty.
+    if not os.path.isfile(csv_path) or os.path.getsize(csv_path) == 0:
+        print("[Prediction] WARNING: portfolio.csv missing or empty — skipping DB sync", flush=True)
+        return
+
+    rows: list[dict] = []
+    with open(csv_path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+
+    for row in rows:
+        ticker = row["ticker"]
+        action = row["action"].strip().lower()
+        amount_of_shares = int(row["amount_of_shares"])
+        total_change = float(row["total_change"])
+
+        # ── CASH_RESERVE summary row ─────────────────────────────────
+        if ticker == "CASH_RESERVE":
+            # total_change is the post-trade cash balance from C++.
+            supabase.table("portfolios").update({
+                "cash_reserve": total_change,
+            }).eq("portfolio_id", portfolio_id).execute()
+
+            # Recompute current_portfolio_value = sum(qty * avg_price) + cash.
+            holdings_resp = (
+                supabase.table("holdings")
+                .select("quantity, average_buy_price")
+                .eq("portfolio_id", portfolio_id)
+                .execute()
+            )
+            holdings_value = sum(
+                float(h["quantity"]) * float(h["average_buy_price"])
+                for h in (holdings_resp.data or [])
+            )
+            supabase.table("portfolios").update({
+                "current_portfolio_value": holdings_value + total_change,
+            }).eq("portfolio_id", portfolio_id).execute()
+            continue
+
+        # ── BUY action ───────────────────────────────────────────────
+        if action == "buy":
+            # Check for existing holding.
+            existing = (
+                supabase.table("holdings")
+                .select("*")
+                .eq("portfolio_id", portfolio_id)
+                .eq("ticker", ticker)
+                .execute()
+            )
+
+            if existing.data:
+                # Update: increase quantity and recalculate weighted avg price.
+                old = existing.data[0]
+                old_qty = float(old["quantity"])
+                old_avg = float(old["average_buy_price"])
+                new_qty = float(amount_of_shares)
+                price_per_share = abs(total_change / amount_of_shares) if amount_of_shares else 0
+                # Weighted average: (old_qty*old_avg + new_qty*price) / (old_qty+new_qty)
+                new_avg = (
+                    (old_qty * old_avg + new_qty * price_per_share)
+                    / (old_qty + new_qty)
+                ) if (old_qty + new_qty) > 0 else 0
+
+                supabase.table("holdings").update({
+                    "quantity": old_qty + new_qty,
+                    "average_buy_price": new_avg,
+                }).eq("holding_id", old["holding_id"]).execute()
+            else:
+                # Insert new holding row.
+                price_per_share = abs(total_change / amount_of_shares) if amount_of_shares else 0
+                supabase.table("holdings").insert({
+                    "portfolio_id": portfolio_id,
+                    "ticker": ticker,
+                    "quantity": float(amount_of_shares),
+                    "average_buy_price": price_per_share,
+                }).execute()
+
+            # Log buy transaction.
+            price_per_unit = abs(total_change / amount_of_shares) if amount_of_shares else 0
+            supabase.table("transactions").insert({
+                "portfolio_id": portfolio_id,
+                "ticker": ticker,
+                "tx_type": "BUY",
+                "quantity": float(amount_of_shares),
+                "price_per_unit": price_per_unit,
+                "total_amount": abs(total_change),
+            }).execute()
+
+        # ── SELL action ──────────────────────────────────────────────
+        elif action == "sell":
+            existing = (
+                supabase.table("holdings")
+                .select("*")
+                .eq("portfolio_id", portfolio_id)
+                .eq("ticker", ticker)
+                .execute()
+            )
+
+            if existing.data:
+                old = existing.data[0]
+                old_qty = float(old["quantity"])
+                new_qty = old_qty - float(amount_of_shares)
+
+                if new_qty <= 0:
+                    # Position fully closed — delete the holding row.
+                    supabase.table("holdings").delete().eq(
+                        "holding_id", old["holding_id"]
+                    ).execute()
+                else:
+                    # Partial sell — decrease quantity, keep avg price.
+                    supabase.table("holdings").update({
+                        "quantity": new_qty,
+                    }).eq("holding_id", old["holding_id"]).execute()
+
+            # Log sell transaction.
+            price_per_unit = abs(total_change / amount_of_shares) if amount_of_shares else 0
+            supabase.table("transactions").insert({
+                "portfolio_id": portfolio_id,
+                "ticker": ticker,
+                "tx_type": "SELL",
+                "quantity": float(amount_of_shares),
+                "price_per_unit": price_per_unit,
+                "total_amount": abs(total_change),
+            }).execute()
+
+        # ── HOLD action ──────────────────────────────────────────────
+        elif action == "hold":
+            # No position change — just record the hold in the transaction log.
+            supabase.table("transactions").insert({
+                "portfolio_id": portfolio_id,
+                "ticker": ticker,
+                "tx_type": "HOLD",
+                "quantity": 0,
+                "price_per_unit": 0,
+                "total_amount": 0,
+            }).execute()
 
 
 # ── Stock tracking ────────────────────────────────────────────────────────────
@@ -294,7 +587,7 @@ async def _run_prediction_loop() -> None:
       - Runs until cancelled by DELETE /predict or server shutdown.
 
     The C++ binary is invoked as:
-        <PREDICTION_BIN> <STOCK_DATA_DIR> <PREDICTIONS_DIR> TICKER1 TICKER2 ...
+        <PREDICTION_BIN> <STOCK_DATA_DIR> <PREDICTIONS_DIR> <total_capital> <investable_capital> TICKER1 TICKER2 ...
     """
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
 
@@ -327,12 +620,41 @@ async def _run_prediction_loop() -> None:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
+            # ── Fetch portfolio state from Supabase ────────────────────
+            # Pull current capital figures and write holdings.csv so the
+            # C++ binary sees the latest DB positions.
+            total_capital = 100000000.0       # fallback defaults
+            investable_capital = 90000000.0
+            try:
+                supabase = get_supabase_client_direct()
+                portfolio_state = fetch_portfolio_state(supabase)
+                portfolio_id = portfolio_state["portfolio_id"]
+                total_capital = portfolio_state["total_capital"]
+                investable_capital = portfolio_state["investable_capital"]
+                write_holdings_csv_from_db(supabase, portfolio_id)
+                print(
+                    f"[Prediction] DB sync: total_capital={total_capital:.2f}, "
+                    f"investable_capital={investable_capital:.2f}",
+                    flush=True,
+                )
+            except Exception as exc:
+                # Non-fatal: log and continue with fallback capital values.
+                print(
+                    f"[Prediction] WARNING: could not fetch portfolio state "
+                    f"from Supabase ({exc}) — using fallback capital values",
+                    flush=True,
+                )
+                portfolio_id = None  # signals "skip DB write-back later"
+
             # ── Run the C++ predictor ─────────────────────────────────
             # Use subprocess.run in a thread executor rather than
             # asyncio.create_subprocess_exec — the async variant requires
             # ProactorEventLoop on Windows which uvicorn does not use,
             # causing silent failures. run_in_executor is cross-platform.
-            cmd = [PREDICTION_BIN, STOCK_DATA_DIR, PREDICTIONS_DIR] + tickers
+            cmd = [
+                PREDICTION_BIN, STOCK_DATA_DIR, PREDICTIONS_DIR,
+                str(total_capital), str(investable_capital),
+            ] + tickers
             print(f"[Prediction] Running: {' '.join(cmd)}", flush=True)
 
             try:
@@ -367,6 +689,23 @@ async def _run_prediction_loop() -> None:
                         f"portfolio.csv updated in {PREDICTIONS_DIR}/",
                         flush=True,
                     )
+
+                    # ── Write C++ results back to Supabase ────────────
+                    # Only attempt if we successfully fetched portfolio
+                    # state earlier (portfolio_id is not None).
+                    if portfolio_id is not None:
+                        try:
+                            apply_portfolio_csv_to_db(supabase, portfolio_id)
+                            print(
+                                "[Prediction] DB sync: portfolio.csv applied to Supabase",
+                                flush=True,
+                            )
+                        except Exception as db_exc:
+                            print(
+                                f"[Prediction] WARNING: failed to sync "
+                                f"portfolio.csv to Supabase: {db_exc}",
+                                flush=True,
+                            )
 
             except Exception as exc:
                 # Don't let a single failed run kill the loop.
@@ -674,7 +1013,9 @@ async def shutdown_event():
 # ── Static file mount for built frontend assets (JS, CSS, images) ────────
 # Must come after all route definitions. FastAPI checks explicit routes
 # first; the mount only serves files that actually exist on disk.
-app.mount("/dashboard", StaticFiles(directory=_FRONTEND_DIST), name="dashboard-static")
+# Only mounted if the frontend has been built (frontend/dist exists).
+if os.path.isdir(_FRONTEND_DIST):
+    app.mount("/dashboard", StaticFiles(directory=_FRONTEND_DIST), name="dashboard-static")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
