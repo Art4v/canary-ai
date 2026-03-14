@@ -11,18 +11,20 @@ import './TradesWindow.css'
  *   2. Content area — empty flex region (placeholder for future order form)
  *   3. "Execute Order" button — puffy 3D style matching dock button aesthetics
  *
+ * @param {string}   windowId         Unique identifier for snap system
  * @param {Function} onClose          Called when the window's X button is clicked
  * @param {Function} [onFocus]        Called on mousedown to bring window to front
  * @param {number}   [zIndex]         Inline z-index for stacking order
  * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function TradesWindow({ onClose, onFocus, zIndex, initialPosition }) {
+export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
   /* Track whether the user has selected "buy" or "sell" mode */
   const [side, setSide] = useState('buy')
 
   return (
     <Window
+      windowId={windowId}
       title="Trades"
       onClose={onClose}
       closeIcon={closeIcon}

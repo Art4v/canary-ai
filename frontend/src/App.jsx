@@ -6,6 +6,10 @@ import TradesWindow from './features/window/TradesWindow.jsx'
 import ChatWindow from './features/window/ChatWindow.jsx'
 import PortfolioWindow from './features/window/PortfolioWindow.jsx'
 import SettingsWindow from './features/window/SettingsWindow.jsx'
+import CornerLauncher from './components/CornerLauncher.jsx'
+import { SnapProvider } from './contexts/SnapContext.jsx'
+import SnapPreview from './components/SnapPreview.jsx'
+import SnapSeams from './components/SnapSeams.jsx'
 
 /** Cascade offset (px) — each newly opened window shifts by this amount */
 const CASCADE_OFFSET = 30
@@ -18,6 +22,8 @@ const CASCADE_OFFSET = 30
  *   - Independent open/close via Dock toggle or window X button
  *   - Cascaded initial positioning so windows don't stack directly on top of each other
  *   - Bring-to-front on click (managed via a z-order array)
+ *   - Lego-style window snapping: edge detection, ghost preview, group drag,
+ *     linked resize, and double-click seam unmerge (via SnapProvider)
  *
  * @returns {JSX.Element}
  */
@@ -64,6 +70,17 @@ function App() {
       }
       return next
     })
+  }, [])
+
+  /**
+   * clearAll — close every open window at once.
+   * Resets openSections to empty, clears the z-order stack,
+   * and wipes all stored cascade positions.
+   */
+  const clearAll = useCallback(() => {
+    setOpenSections(new Set())
+    setZOrder([])
+    cascadeRef.current = {}
   }, [])
 
   /**
@@ -118,47 +135,78 @@ function App() {
       {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
       <Dock openSections={openSections} onNavigate={handleNavigate} />
 
-      {/* ── Section Windows ──
-          Conditionally render each open window. Each receives onClose,
-          onFocus (bring-to-front), zIndex, and a cascaded initialPosition. */}
-      {openSections.has('trades') && (
-        <TradesWindow
-          onClose={() => closeSection('trades')}
-          onFocus={() => bringToFront('trades')}
-          zIndex={getZIndex('trades')}
-          initialPosition={cascadeRef.current['trades']}
-        />
-      )}
+      {/* ── Corner Launchers ──
+          Two expandable quick-access menus in the bottom-left and bottom-right
+          corners. They mirror the Dock's 5 nav buttons plus a "Clear All" action
+          for faster access without moving the cursor to the central Dock. */}
+      <CornerLauncher
+        position="left"
+        openSections={openSections}
+        onNavigate={handleNavigate}
+        onClearAll={clearAll}
+      />
+      <CornerLauncher
+        position="right"
+        openSections={openSections}
+        onNavigate={handleNavigate}
+        onClearAll={clearAll}
+      />
 
-      {/* Chat window — purple-themed AI chat interface */}
-      {openSections.has('chats') && (
-        <ChatWindow
-          onClose={() => closeSection('chats')}
-          onFocus={() => bringToFront('chats')}
-          zIndex={getZIndex('chats')}
-          initialPosition={cascadeRef.current['chats']}
-        />
-      )}
+      {/* SnapProvider wraps all windows and overlay components so they
+          share the same snap state (bonds, snap preview, window registry) */}
+      <SnapProvider>
+        {/* ── Section Windows ──
+            Conditionally render each open window. Each receives windowId,
+            onClose, onFocus (bring-to-front), zIndex, and a cascaded initialPosition. */}
+        {openSections.has('trades') && (
+          <TradesWindow
+            windowId="trades"
+            onClose={() => closeSection('trades')}
+            onFocus={() => bringToFront('trades')}
+            zIndex={getZIndex('trades')}
+            initialPosition={cascadeRef.current['trades']}
+          />
+        )}
 
-      {/* Portfolio window — yellow/cream-themed portfolio overview */}
-      {openSections.has('portfolio') && (
-        <PortfolioWindow
-          onClose={() => closeSection('portfolio')}
-          onFocus={() => bringToFront('portfolio')}
-          zIndex={getZIndex('portfolio')}
-          initialPosition={cascadeRef.current['portfolio']}
-        />
-      )}
+        {/* Chat window — purple-themed AI chat interface */}
+        {openSections.has('chats') && (
+          <ChatWindow
+            windowId="chats"
+            onClose={() => closeSection('chats')}
+            onFocus={() => bringToFront('chats')}
+            zIndex={getZIndex('chats')}
+            initialPosition={cascadeRef.current['chats']}
+          />
+        )}
 
-      {/* Settings window — lavender-themed settings panel */}
-      {openSections.has('settings') && (
-        <SettingsWindow
-          onClose={() => closeSection('settings')}
-          onFocus={() => bringToFront('settings')}
-          zIndex={getZIndex('settings')}
-          initialPosition={cascadeRef.current['settings']}
-        />
-      )}
+        {/* Portfolio window — yellow/cream-themed portfolio overview */}
+        {openSections.has('portfolio') && (
+          <PortfolioWindow
+            windowId="portfolio"
+            onClose={() => closeSection('portfolio')}
+            onFocus={() => bringToFront('portfolio')}
+            zIndex={getZIndex('portfolio')}
+            initialPosition={cascadeRef.current['portfolio']}
+          />
+        )}
+
+        {/* Settings window — lavender-themed settings panel */}
+        {openSections.has('settings') && (
+          <SettingsWindow
+            windowId="settings"
+            onClose={() => closeSection('settings')}
+            onFocus={() => bringToFront('settings')}
+            zIndex={getZIndex('settings')}
+            initialPosition={cascadeRef.current['settings']}
+          />
+        )}
+
+        {/* ── Snap Overlays ──
+            Preview ghost rectangle appears during drag when near another window's edge.
+            Seams render along bonded edges with double-click-to-unmerge. */}
+        <SnapPreview />
+        <SnapSeams />
+      </SnapProvider>
     </>
   )
 }

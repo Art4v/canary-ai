@@ -1,0 +1,165 @@
+/* ══════════════════════════════════════════════════════════════
+   CornerLauncher — expandable quick-access menus in viewport corners
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Container ──
+   Fixed to a bottom corner of the viewport.
+   z-index 200 matches the Dock so launchers sit at the same layer.
+   min-width/height create an invisible hover zone so the trigger
+   can be revealed even though it starts scaled to 0. */
+.corner-launcher {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Invisible hover zone — large enough to catch the cursor
+     entering the corner, even when the trigger is hidden */
+  min-width: 64px;
+  min-height: 64px;
+  justify-content: flex-end;
+}
+
+/* ── Corner variants ──
+   24px inset from each corner's edges */
+.corner-launcher--left {
+  bottom: 24px;
+  left: 24px;
+}
+
+.corner-launcher--right {
+  bottom: 24px;
+  right: 24px;
+}
+
+/* ── Trigger button ──
+   48px puffy 3D circle matching the Dock aesthetic.
+   The inner icon rotates via GSAP (0° = +, 45° = ×). */
+.corner-launcher__trigger {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 3px solid var(--color-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 0.15s, filter 0.15s, box-shadow 0.15s;
+  color: var(--color-text);
+
+  /* Start hidden — GSAP animates scale/opacity in on hover */
+  transform: scale(0);
+  opacity: 0;
+
+  /* 3D puffy effect: bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+}
+
+/* Trigger hover — slight scale-up and brightness boost */
+.corner-launcher__trigger:hover {
+  transform: scale(1.08) translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow:
+    0 6px 0 var(--color-border),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* Trigger active press — pushes down slightly */
+.corner-launcher__trigger:active {
+  transform: translateY(1px);
+}
+
+/* Icon wrapper — display:flex keeps the SVG centered;
+   GSAP handles the rotation transform directly on this element */
+.corner-launcher__trigger-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Menu ──
+   Column-reverse layout so items grow upward from the trigger.
+   10px gap between items for comfortable spacing. */
+.corner-launcher__menu {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* ── Menu item ──
+   42px colored circle with a centered Lucide icon.
+   Uses per-item CSS custom properties (--cl-primary, --cl-dark)
+   set via inline style for section-specific coloring. */
+.corner-launcher__item {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform 0.15s, filter 0.15s, box-shadow 0.15s;
+
+  /* Section-colored fill with matching dark icon */
+  background: var(--cl-primary);
+  color: var(--cl-dark);
+
+  /* Subtle puffy shadow for depth */
+  box-shadow:
+    0 3px 0 var(--cl-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+}
+
+/* Item hover — gentle lift */
+.corner-launcher__item:hover {
+  transform: scale(1.1) translateY(-2px);
+  filter: brightness(1.08);
+}
+
+/* Item active press */
+.corner-launcher__item:active {
+  transform: translateY(1px);
+}
+
+/* ── Active state ──
+   When the corresponding window is open, show a 3px outline ring
+   using the section's dark color for visual feedback. */
+.corner-launcher__item--active {
+  box-shadow:
+    0 0 0 3px var(--cl-dark),
+    0 3px 0 var(--cl-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* ── Clear All button ──
+   Muted surface color with red icon instead of a section color.
+   Sits at the top of the expanded stack. */
+.corner-launcher__item--clear {
+  background: var(--color-surface);
+  color: #c0392b;
+  border: 2px solid var(--color-border);
+
+  /* Override section shadow with border-based shadow */
+  box-shadow:
+    0 3px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+}
+
+/* Clear All hover — subtle red tint */
+.corner-launcher__item--clear:hover {
+  filter: brightness(1.05);
+  transform: scale(1.1) translateY(-2px);
+  background: #fde8e8;
+}
+
+/* Dark mode: adjust the Clear All hover background */
+body.night .corner-launcher__item--clear:hover {
+  background: rgba(192, 57, 43, 0.2);
+}

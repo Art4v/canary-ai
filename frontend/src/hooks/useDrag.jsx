@@ -76,5 +76,5 @@ export default function useDrag(initialPosition, size) {
     }
   }, [])
 
-  return { position, setPosition, onMouseDown }
+  return { position, setPosition, onMouseDown, dragging }
 }

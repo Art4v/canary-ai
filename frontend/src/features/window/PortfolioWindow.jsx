@@ -13,15 +13,17 @@ import './PortfolioWindow.css'
  *
  * All values are hardcoded placeholders for now.
  *
+ * @param {string}   windowId         Unique identifier for snap system
  * @param {Function} onClose          Called when the window's X button is clicked
  * @param {Function} [onFocus]        Called on mousedown to bring window to front
  * @param {number}   [zIndex]         Inline z-index for stacking order
  * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function PortfolioWindow({ onClose, onFocus, zIndex, initialPosition }) {
+export default function PortfolioWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
   return (
     <Window
+      windowId={windowId}
       title="Portfolio"
       onClose={onClose}
       closeIcon={closeIcon}
