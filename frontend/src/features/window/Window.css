@@ -1,0 +1,92 @@
+/* ══════════════════════════════════════════════════
+   Window — Generic draggable/resizable window shell
+   ══════════════════════════════════════════════════ */
+
+/* ── Outer Container ──
+   Fixed-position floating panel. z-index 300 keeps it above the Dock (200).
+   Color tokens (--win-primary/dark/light) are set via inline style. */
+.window {
+  position: fixed;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  /* Subtle shadow for floating depth */
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  /* Smooth GPU-accelerated transforms for GSAP pop-in */
+  will-change: transform, opacity;
+}
+
+/* ── Header Bar ──
+   Drag handle area. Slightly darker shade of the section color.
+   Cursor indicates draggability. */
+.window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  background: var(--win-light);
+  cursor: grab;
+  /* Prevent text selection during drag */
+  user-select: none;
+}
+
+/* Switch cursor while actively dragging */
+.window-header:active {
+  cursor: grabbing;
+}
+
+/* ── Title Label ──
+   Left-aligned, bold, uses the dark color token for contrast. */
+.window-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--win-dark);
+  /* Inset look — subtle background behind the title text */
+  background: var(--color-surface);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+}
+
+/* ── Close Button ──
+   Container for the per-window close icon PNG.
+   No background/border — the image itself carries the circle and color. */
+.window-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+  background: none;
+  transition: filter 0.15s, transform 0.15s;
+}
+
+/* Make the close icon image fill the button container */
+.window-close img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Hover brightens and lifts slightly */
+.window-close:hover {
+  filter: brightness(1.1);
+  transform: scale(1.1);
+}
+
+/* ── Body ──
+   Fills remaining space below the header. Background uses the primary
+   section color for an immersive panel feel. */
+.window-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--win-primary);
+  overflow: auto;
+}

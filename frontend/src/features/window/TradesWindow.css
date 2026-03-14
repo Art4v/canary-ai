@@ -1,0 +1,95 @@
+/* ══════════════════════════════════════════
+   TradesWindow — Trades section inner content
+   ══════════════════════════════════════════ */
+
+/* ── Buy / Sell Toggle Row ──
+   Two equal-width buttons sitting side-by-side below the header.
+   Border uses the trades dark color for definition. */
+.trades-toggle {
+  display: flex;
+  border: 2px solid var(--color-trades-dark);
+}
+
+/* ── Toggle Button (base) ──
+   Each button fills half the row. Inactive state uses the lighter shade. */
+.trades-toggle-btn {
+  flex: 1;
+  padding: var(--space-3) 0;
+  border: none;
+  background: var(--color-trades-light);
+  color: var(--color-trades-dark);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+/* Divider between the two toggle buttons */
+.trades-toggle-btn + .trades-toggle-btn {
+  border-left: 2px solid var(--color-trades-dark);
+}
+
+/* ── Active Toggle State ──
+   Active side gets the brighter primary color to stand out. */
+.trades-toggle-btn--active {
+  background: var(--color-trades-primary);
+}
+
+/* Hover on inactive button shows a subtle brightness bump */
+.trades-toggle-btn:hover:not(.trades-toggle-btn--active) {
+  filter: brightness(1.05);
+}
+
+/* ── Content Area ──
+   Flex-grows to fill all remaining vertical space between toggle and footer.
+   Uses a slightly muted green background matching the design mockup. */
+.trades-content {
+  flex: 1;
+  background: var(--color-trades-primary);
+  opacity: 0.6;
+}
+
+/* ── Footer ──
+   Bottom bar holding the execute order button, centered horizontally. */
+.trades-footer {
+  padding: var(--space-4);
+  background: var(--color-trades-light);
+  display: flex;
+  justify-content: center;
+}
+
+/* ── Execute Order Button ──
+   Puffy 3D style matching dock nav buttons.
+   Wide pill shape with embossed shadow for a cartoony, tactile feel. */
+.trades-execute-btn {
+  padding: var(--space-3) var(--space-8);
+  border-radius: var(--radius-card);
+  border: 3px solid var(--color-trades-dark);
+  background: var(--color-surface);
+  color: var(--color-trades-dark);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+  /* 3D puffy effect — bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 var(--color-trades-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+
+/* Hover lifts the button and deepens the shadow */
+.trades-execute-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.05);
+  box-shadow:
+    0 6px 0 var(--color-trades-dark),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* Active press pushes the button down for tactile feedback */
+.trades-execute-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 0 var(--color-trades-dark),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}

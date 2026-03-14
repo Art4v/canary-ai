@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import gsap from 'gsap'
 import {
   MessageCircle,
@@ -36,9 +36,11 @@ const NAV_ITEMS = [
  *
  * @returns {JSX.Element} The dock component
  */
-export default function Dock() {
-  /* Track which nav section is currently active (null = none selected) */
-  const [active, setActive] = useState(null)
+/**
+ * @param {string|null} activeSection  Currently open section key (lifted to App)
+ * @param {Function}    onNavigate     Callback to set the active section
+ */
+export default function Dock({ activeSection, onNavigate }) {
 
   /* Ref for the logo element — used by GSAP for the bobbing animation */
   const logoRef = useRef(null)
@@ -110,10 +112,11 @@ export default function Dock() {
           {NAV_ITEMS.map(({ key, label, Icon, color }) => (
             <button
               key={key}
-              className={`dock-nav-btn${active === key ? ' dock-nav-btn--active' : ''}`}
+              className={`dock-nav-btn${activeSection === key ? ' dock-nav-btn--active' : ''}`}
               title={label}
               aria-label={label}
-              onClick={() => setActive(key)}
+              /* Toggle behavior: clicking the active section again closes it */
+              onClick={() => onNavigate(activeSection === key ? null : key)}
               /* Per-button section colors via inline CSS custom properties.
                  The CSS file references --btn-primary / --btn-dark / --btn-light
                  for border, fill, and active states. */
