@@ -35,6 +35,9 @@ A hackathon project built for UNIHACK 2026.
   - **Timestamp alignment** — aligns all stocks to a common timestamp index using forward-fill, handling gaps from low-liquidity trading (e.g. BOBS has fewer rows than AAPL/MSFT)
   - **Per-minute returns** — computes simple returns `r_t = (price_t - price_{t-1}) / price_{t-1}` for each aligned stock series; return vectors are same-length as input (index 0 = 0.0) to stay aligned with timestamps
   - **Covariance matrix** — computes mean returns and a 3×3 sample covariance matrix (with Bessel's correction) from the per-minute return vectors; exploits matrix symmetry and prints a labelled grid for verification
+  - **Efficient frontier sampling** — generates ~1000 random long-only portfolios (weights ≥ 0, sum to 1) using uniform sampling + normalization, computes each portfolio's expected return (w^T * μ) and risk (√(w^T Σ w)), and identifies the min-variance and max-return portfolios
+  - **Optimal portfolio selection** — finds the portfolio with the highest Sharpe ratio S = (r_p − r_f) / σ_p across all frontier portfolios (risk-free rate defaults to 0.0 for per-minute returns); prints the optimal weights (w1*, w2*, w3*), Sharpe ratio, expected return, and risk
+  - **Share allocation** — converts optimal weights into concrete whole-share counts using $90,000 investable capital and current stock prices; uses `floor()` rounding (no fractional shares) and reports per-stock invested amounts plus total rounding remainder returned to the cash reserve
   - Build: `cd backend/prediction && g++ -std=c++17 -o prediction prediction.cpp`
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn

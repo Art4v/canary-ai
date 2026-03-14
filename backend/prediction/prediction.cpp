@@ -30,6 +30,19 @@ struct Portfolio {
     double std_dev;               // sqrt(variance) — portfolio risk
 };
 
+/* Represents the share allocation for a single stock in the portfolio.
+ * Converts an optimal weight into a concrete number of whole shares
+ * given the current price and total investable capital. */
+struct Allocation {
+    std::string ticker;       // stock symbol
+    double weight;            // optimal weight from Sharpe maximization
+    double current_price;     // latest price used for allocation
+    double target_dollars;    // weight * investable capital
+    int shares;               // floor(target_dollars / current_price)
+    double invested;          // shares * current_price (actual dollars used)
+    double remainder;         // target_dollars - invested (rounding leftover)
+};
+
 /* Represents a single row of stock data from a CSV file. */
 struct StockRow {
     std::tm timestamp;       // parsed datetime (timezone offset discarded)
@@ -161,7 +174,7 @@ std::vector<StockRow> load_csv(const std::string& filepath) {
 
     // sort rows by timestamp ascending using mktime for comparison
     std::sort(rows.begin(), rows.end(),
-              [](StockRow& a, StockRow& b) {
+              [](const StockRow& a, const StockRow& b) {
                   // mktime normalizes the tm struct and returns time_t for comparison
                   std::tm ta = a.timestamp;
                   std::tm tb = b.timestamp;
@@ -288,8 +301,17 @@ void align_timestamps(std::vector<std::vector<StockRow>*> stocks,
                 // Note: has_last_known is always true here because we trimmed
                 // timestamps before global_start (every stock's first row).
                 StockRow filled = last_known;
-                std::tm* new_tm = std::localtime(&t);
-                filled.timestamp = *new_tm;
+                // Platform-safe conversion from time_t to std::tm.
+                // std::localtime returns a pointer to a static buffer
+                // which is not thread-safe; use the platform-specific
+                // reentrant variant instead.
+                std::tm new_tm = {};
+#ifdef _WIN32
+                localtime_s(&new_tm, &t);
+#else
+                localtime_r(&t, &new_tm);
+#endif
+                filled.timestamp = new_tm;
                 aligned.push_back(filled);
             }
         }
@@ -668,6 +690,158 @@ void print_frontier_summary(const std::vector<std::string>& labels,
 }
 
 /*
+ * find_optimal_portfolio — selects the portfolio with the highest Sharpe ratio.
+ *
+ * Sharpe ratio = (expected_return - risk_free_rate) / std_dev
+ * Skips any portfolio with std_dev == 0 to avoid division by zero.
+ *
+ * @param portfolios      vector of frontier Portfolio structs
+ * @param risk_free_rate  the risk-free rate (default 0.0 for per-minute returns,
+ *                        where the per-minute risk-free rate is negligible)
+ * @return                index of the portfolio with the highest Sharpe ratio
+ */
+size_t find_optimal_portfolio(const std::vector<Portfolio>& portfolios,
+                              double risk_free_rate = 0.0) {
+    size_t best_idx = 0;
+    double best_sharpe = -1e18;  // start with a very low value
+
+    for (size_t i = 0; i < portfolios.size(); ++i) {
+        // Skip portfolios with zero risk — Sharpe ratio is undefined
+        if (portfolios[i].std_dev == 0.0) continue;
+
+        // Sharpe = excess return / risk
+        double sharpe = (portfolios[i].expected_return - risk_free_rate)
+                        / portfolios[i].std_dev;
+
+        if (sharpe > best_sharpe) {
+            best_sharpe = sharpe;
+            best_idx = i;
+        }
+    }
+
+    return best_idx;
+}
+
+/*
+ * print_optimal_portfolio — prints the optimal portfolio's Sharpe ratio,
+ * weight allocation, expected return, and standard deviation.
+ *
+ * @param labels      stock ticker labels (e.g. {"AAPL", "BOBS", "MSFT"})
+ * @param portfolios  vector of frontier Portfolio structs
+ * @param optimal_idx index of the optimal portfolio in the vector
+ */
+void print_optimal_portfolio(const std::vector<std::string>& labels,
+                             const std::vector<Portfolio>& portfolios,
+                             size_t optimal_idx) {
+    const Portfolio& op = portfolios[optimal_idx];
+
+    // Compute the Sharpe ratio for display (r_f = 0.0)
+    double sharpe = (op.std_dev != 0.0)
+                    ? op.expected_return / op.std_dev
+                    : 0.0;
+
+    std::cout << "=== Optimal Portfolio (Max Sharpe) ===" << std::endl;
+    std::cout << "  Sharpe Ratio:    " << std::fixed << std::setprecision(6)
+              << sharpe << std::endl;
+
+    // Print weight allocation per stock
+    std::cout << "  Weights: ";
+    for (size_t i = 0; i < labels.size(); ++i) {
+        std::cout << labels[i] << "=" << std::fixed << std::setprecision(4)
+                  << op.weights[i];
+        if (i + 1 < labels.size()) std::cout << ", ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "  Expected Return: " << std::scientific << std::setprecision(6)
+              << op.expected_return << std::endl;
+    std::cout << "  Std Dev (Risk):  " << std::scientific << std::setprecision(6)
+              << op.std_dev << std::endl;
+    std::cout << std::endl;
+}
+
+/*
+ * compute_allocation — converts optimal weights into whole-share counts.
+ *
+ * For each stock: target_dollars = w_i * capital, shares = floor(target / price).
+ * Rounding remainders accumulate back as additional cash reserve.
+ *
+ * @param labels          stock ticker labels
+ * @param weights         optimal weight vector (sums to 1.0)
+ * @param current_prices  latest price per stock
+ * @param capital         investable capital in dollars (e.g. 90000.0)
+ * @return                vector of Allocation structs, one per stock
+ */
+std::vector<Allocation> compute_allocation(
+    const std::vector<std::string>& labels,
+    const std::vector<double>& weights,
+    const std::vector<double>& current_prices,
+    double capital) {
+    std::vector<Allocation> allocations;
+    allocations.reserve(labels.size());
+
+    for (size_t i = 0; i < labels.size(); ++i) {
+        Allocation a;
+        a.ticker = labels[i];
+        a.weight = weights[i];
+        a.current_price = current_prices[i];
+        // Dollar amount this stock should receive based on its weight
+        a.target_dollars = weights[i] * capital;
+        // Round down to whole shares — no fractional shares allowed
+        a.shares = (int)std::floor(a.target_dollars / current_prices[i]);
+        // Actual dollars deployed into this stock
+        a.invested = a.shares * current_prices[i];
+        // Leftover from rounding — returns to the cash reserve
+        a.remainder = a.target_dollars - a.invested;
+        allocations.push_back(a);
+    }
+
+    return allocations;
+}
+
+/*
+ * print_allocation — prints the share allocation table and totals.
+ *
+ * Shows per-stock weight, price, target dollars, share count, invested
+ * amount, and rounding remainder, followed by aggregate totals.
+ *
+ * @param labels      stock ticker labels
+ * @param allocation  vector of Allocation structs (one per stock)
+ * @param capital     total investable capital (for header display)
+ */
+void print_allocation(const std::vector<std::string>& labels,
+                      const std::vector<Allocation>& allocation,
+                      double capital) {
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "=== Portfolio Allocation ($"
+              << capital << ") ===" << std::endl;
+
+    double total_invested = 0.0;
+    double total_remainder = 0.0;
+
+    for (const auto& a : allocation) {
+        std::cout << "  " << a.ticker << ": "
+                  << "w=" << std::fixed << std::setprecision(4) << a.weight
+                  << "  price=$" << std::fixed << std::setprecision(2) << a.current_price
+                  << "  target=$" << std::fixed << std::setprecision(2) << a.target_dollars
+                  << "  shares=" << a.shares
+                  << "  invested=$" << std::fixed << std::setprecision(2) << a.invested
+                  << "  remainder=$" << std::fixed << std::setprecision(2) << a.remainder
+                  << std::endl;
+        total_invested += a.invested;
+        total_remainder += a.remainder;
+    }
+
+    std::cout << "  ---" << std::endl;
+    std::cout << "  Total Invested:  $" << std::fixed << std::setprecision(2)
+              << total_invested << std::endl;
+    std::cout << "  Total Remainder: $" << std::fixed << std::setprecision(2)
+              << total_remainder
+              << "  (rounding cash returned to reserve)" << std::endl;
+    std::cout << std::endl;
+}
+
+/*
  * main — entry point. Loads all three test CSV files, aligns their
  * timestamps to a common index via forward-fill, computes per-minute
  * returns, builds the covariance matrix, generates frontier portfolios,
@@ -678,6 +852,12 @@ int main() {
     std::vector<StockRow> aapl = load_csv("test_data/AAPL.csv");
     std::vector<StockRow> bobs = load_csv("test_data/BOBS.csv");
     std::vector<StockRow> msft = load_csv("test_data/MSFT.csv");
+
+    // Print raw loaded data before alignment modifies the vectors
+    std::cout << "=== Stock Data Summary ===" << std::endl << std::endl;
+    print_summary(aapl);
+    print_summary(bobs);
+    print_summary(msft);
 
     // Align all three stocks to a common set of timestamps.
     // Stocks with missing timestamps (e.g. BOBS has gaps from low liquidity)
@@ -724,11 +904,23 @@ int main() {
         generate_frontier_portfolios(mean_returns, cov_matrix, 1000);
     print_frontier_summary(labels, frontier);
 
-    std::cout << "=== Stock Data Summary ===" << std::endl << std::endl;
+    // Find the optimal portfolio (highest Sharpe ratio, r_f = 0.0)
+    size_t optimal_idx = find_optimal_portfolio(frontier, 0.0);
+    print_optimal_portfolio(labels, frontier, optimal_idx);
 
-    print_summary(aapl);
-    print_summary(bobs);
-    print_summary(msft);
+    // Gather current prices from the last aligned row of each stock
+    std::vector<double> current_prices = {
+        aapl.back().current_price,
+        bobs.back().current_price,
+        msft.back().current_price
+    };
+
+    // Compute share allocation: floor(w_i * $90,000 / price_i) per stock
+    // Rounding remainders accumulate back into the cash reserve
+    double investable_capital = 90000.0;
+    std::vector<Allocation> allocation = compute_allocation(
+        labels, frontier[optimal_idx].weights, current_prices, investable_capital);
+    print_allocation(labels, allocation, investable_capital);
 
     return 0;
 }
