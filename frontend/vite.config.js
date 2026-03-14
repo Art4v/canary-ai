@@ -13,4 +13,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Proxy API requests to the FastAPI backend during development.
+  // In production, the SPA is served from FastAPI directly so no proxy is needed.
+  server: {
+    proxy: {
+      '/database': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

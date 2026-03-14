@@ -10,7 +10,7 @@ from supabase import Client
 
 from dependencies import get_supabase_client
 from schemas.response import success_response, error_response
-from schemas.users import UserCreate, UserUpdate
+from schemas.users import UserCreate, UserLogin, UserUpdate
 from crud import users as crud_users
 
 # All routes are prefixed with /database/users by the include_router call.
@@ -35,12 +35,28 @@ def get_user(username: str, db: Client = Depends(get_supabase_client)):
     return success_response(data)
 
 
+@router.post("/login")
+def login_user(body: UserLogin, db: Client = Depends(get_supabase_client)):
+    """
+    Verify user credentials (email + password).
+
+    Looks up the user by email and checks the plaintext password
+    against the stored bcrypt hash. Returns user data on success.
+    No JWT/session is created — this is credential verification only.
+    """
+    data, err = crud_users.authenticate(db, body.email, body.password)
+    if err:
+        return JSONResponse(status_code=401, content=error_response(err))
+    return success_response(data)
+
+
 @router.post("")
 def create_user(body: UserCreate, db: Client = Depends(get_supabase_client)):
     """
     Create a new user.
 
-    Expects JSON with ``username``, ``email``, and ``password_hash``.
+    Expects JSON with ``username``, ``email``, and ``password``.
+    The plaintext password is hashed server-side before storage.
     """
     # model_dump() converts the Pydantic model to a plain dict for Supabase.
     data, err = crud_users.create(db, body.model_dump())

@@ -11,7 +11,8 @@ import './AuthPages.css'
  * Features:
  *   - Glassmorphic card with GSAP pop-in animation (scale 0.8→1, opacity 0→1)
  *   - Puffy 3D back button (top-left) navigating to the previous page
- *   - Email + password fields with stub submit (console.log + redirect to dashboard)
+ *   - Email + password fields that POST to /database/users/login for verification
+ *   - On success, redirects to the dashboard
  *   - Footer link to the register page
  *
  * @returns {JSX.Element}
@@ -20,6 +21,12 @@ function LoginPage() {
   /* Form state for email and password fields */
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+
+  /* Validation / server error message shown below the form */
+  const [error, setError] = useState('')
+
+  /* Loading state — disables the submit button while the request is in flight */
+  const [loading, setLoading] = useState(false)
 
   /* Ref to the card element for GSAP entrance animation */
   const cardRef = useRef(null)
@@ -41,16 +48,49 @@ function LoginPage() {
   }, [])
 
   /**
-   * handleSubmit — stub form handler.
-   * Logs the email and password to the console and
-   * navigates to the dashboard route.
+   * handleSubmit — sends login credentials to the backend for verification.
+   *
+   * 1. POSTs { email, password } to /database/users/login
+   * 2. The backend looks up the user by email and verifies the password
+   *    against the stored bcrypt hash
+   * 3. On success, navigates to the dashboard
+   * 4. On error, displays the server error message in the form
    *
    * @param {React.FormEvent} e  Form submit event
    */
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    console.log('Login submitted:', { email, password })
-    navigate('/')
+
+    /* Clear any previous error and enter loading state */
+    setError('')
+    setLoading(true)
+
+    try {
+      /* POST login credentials to the backend login endpoint.
+         Uses a relative URL — same origin as the SPA. */
+      const res = await fetch('/database/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      /* Parse the JSON envelope { success, data?, error? } */
+      const result = await res.json()
+
+      if (result.success) {
+        /* Login succeeded — redirect to the main dashboard */
+        navigate('/')
+      } else {
+        /* Show the server-provided error (e.g. invalid credentials) */
+        setError(result.error || 'Login failed. Please try again.')
+      }
+    } catch (err) {
+      /* Network error or server unreachable */
+      setError('Unable to connect to the server. Please try again later.')
+    } finally {
+      /* Always re-enable the submit button */
+      setLoading(false)
+    }
   }
 
   /**
@@ -104,8 +144,13 @@ function LoginPage() {
             />
           </div>
 
-          {/* Submit button — puffy 3D accent-colored */}
-          <button type="submit" className="auth-submit-btn">Login</button>
+          {/* Error message (e.g. invalid credentials, server error) */}
+          {error && <p className="auth-error">{error}</p>}
+
+          {/* Submit button — disabled while request is in flight */}
+          <button type="submit" className="auth-submit-btn" disabled={loading}>
+            {loading ? 'Logging in…' : 'Login'}
+          </button>
         </form>
 
         {/* Footer link to register page */}

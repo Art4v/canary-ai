@@ -14,6 +14,7 @@ A hackathon project built for UNIHACK 2026.
 | Icons    | Lucide React                |
 | Animation| GSAP                        |
 | Async IO | aiofiles                    |
+| Auth     | bcrypt (server-side hashing)|
 
 ## Features
 
@@ -55,7 +56,8 @@ A hackathon project built for UNIHACK 2026.
   - **Users** (`/database/users`)
     - `GET /database/users` — list all users
     - `GET /database/users/{username}` — get a single user
-    - `POST /database/users` — create a user (`{"username", "email", "password_hash"}`)
+    - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage
+    - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash and returns user data on success
     - `PUT /database/users/{username}` — update user fields (all optional)
     - `DELETE /database/users/{username}` — delete a user
   - **Portfolios** (`/database/portfolios`)
@@ -81,7 +83,7 @@ A hackathon project built for UNIHACK 2026.
 
 ### Frontend
 
-- **Login & Register pages** — separate routes (`/dashboard/login`, `/dashboard/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; stub form submission (console.log + redirect to dashboard)
+- **Login & Register pages** — separate routes (`/dashboard/login`, `/dashboard/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`; loading states disable the submit button during requests; server errors are displayed inline
 - **Theme system** — three modes: `auto`, `night`, and `day`
   - Auto mode cycles based on AEST time (day between 10:00–16:00, night otherwise) and re-evaluates every 60 seconds
   - Managed by `useTheme` hook and `ThemeProvider` context

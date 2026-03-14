@@ -13,7 +13,8 @@ import './AuthPages.css'
  *   - Puffy 3D back button (top-left) navigating to the previous page
  *   - Username, email, password, and confirm password fields
  *   - Basic validation: passwords must match before submit
- *   - Stub submit (console.log + redirect to dashboard)
+ *   - Sends POST /database/users to create the user in Supabase
+ *   - On success, redirects to the login page
  *   - Footer link to the login page
  *
  * @returns {JSX.Element}
@@ -27,6 +28,9 @@ function RegisterPage() {
 
   /* Validation error message shown below the form */
   const [error, setError] = useState('')
+
+  /* Loading state — disables the submit button while the request is in flight */
+  const [loading, setLoading] = useState(false)
 
   /* Ref to the card element for GSAP entrance animation */
   const cardRef = useRef(null)
@@ -48,13 +52,17 @@ function RegisterPage() {
   }, [])
 
   /**
-   * handleSubmit — stub form handler with password match validation.
-   * If passwords don't match, shows an error message.
-   * Otherwise logs form data to console and navigates to the dashboard.
+   * handleSubmit — sends registration data to the backend.
+   *
+   * 1. Validates that password and confirm password match
+   * 2. POSTs { username, email, password } to /database/users
+   * 3. The backend hashes the password with bcrypt before storing
+   * 4. On success, navigates to /login so the user can sign in
+   * 5. On error, displays the server error message in the form
    *
    * @param {React.FormEvent} e  Form submit event
    */
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
     /* Validate that password and confirm password fields match */
@@ -63,11 +71,37 @@ function RegisterPage() {
       return
     }
 
-    /* Clear any previous error */
+    /* Clear any previous error and enter loading state */
     setError('')
+    setLoading(true)
 
-    console.log('Register submitted:', { username, email, password })
-    navigate('/')
+    try {
+      /* POST the registration payload to the backend users endpoint.
+         Uses a relative URL because the React SPA is served from the
+         same FastAPI origin — no CORS needed. */
+      const res = await fetch('/database/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password }),
+      })
+
+      /* Parse the JSON envelope { success, data?, error? } */
+      const result = await res.json()
+
+      if (result.success) {
+        /* Registration succeeded — redirect to login page */
+        navigate('/login')
+      } else {
+        /* Show the server-provided error (e.g. duplicate username) */
+        setError(result.error || 'Registration failed. Please try again.')
+      }
+    } catch (err) {
+      /* Network error or server unreachable */
+      setError('Unable to connect to the server. Please try again later.')
+    } finally {
+      /* Always re-enable the submit button */
+      setLoading(false)
+    }
   }
 
   /**
@@ -152,8 +186,10 @@ function RegisterPage() {
           {/* Validation error message (e.g. password mismatch) */}
           {error && <p className="auth-error">{error}</p>}
 
-          {/* Submit button — puffy 3D accent-colored */}
-          <button type="submit" className="auth-submit-btn">Register</button>
+          {/* Submit button — disabled while request is in flight */}
+          <button type="submit" className="auth-submit-btn" disabled={loading}>
+            {loading ? 'Registering…' : 'Register'}
+          </button>
         </form>
 
         {/* Footer link to login page */}
