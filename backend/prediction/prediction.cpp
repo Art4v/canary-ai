@@ -1202,56 +1202,95 @@ void write_trades_csv(const std::string& filepath,
 }
 
 /*
- * main — entry point. Loads all three test CSV files, aligns their
- * timestamps to a common index via forward-fill, computes per-minute
- * returns, builds the covariance matrix, generates frontier portfolios,
- * and prints summaries.
+ * main — entry point. Accepts CLI arguments for dynamic stock selection:
+ *   ./prediction.exe <data_dir> <output_dir> <TICKER1> [TICKER2] ...
+ *
+ * Loads per-ticker CSV files from data_dir, aligns their timestamps to a
+ * common index via forward-fill, computes per-minute returns, builds the
+ * covariance matrix, generates frontier portfolios, selects the optimal
+ * portfolio, computes trades, and writes results to output_dir.
  */
-int main() {
-    // paths are relative to the prediction/ directory
-    std::vector<StockRow> aapl = load_csv("test_data/AAPL.csv");
-    std::vector<StockRow> bobs = load_csv("test_data/BOBS.csv");
-    std::vector<StockRow> msft = load_csv("test_data/MSFT.csv");
+int main(int argc, char* argv[]) {
+    // Validate minimum argument count: program name + data_dir + output_dir + at least 1 ticker
+    if (argc < 4) {
+        std::cerr << "Usage: " << argv[0] << " <data_dir> <output_dir> <TICKER1> [TICKER2] ..." << std::endl;
+        return 1;
+    }
+
+    // Parse CLI arguments
+    std::string data_dir = argv[1];    // directory containing per-ticker CSV files
+    std::string output_dir = argv[2];  // directory for output files (holdings.csv, portfolio.csv)
+
+    // Collect ticker symbols from remaining arguments
+    std::vector<std::string> labels;
+    for (int i = 3; i < argc; i++) {
+        labels.push_back(argv[i]);
+    }
+
+    // Load CSV data for each ticker, skipping tickers with no data
+    std::vector<std::vector<StockRow>> all_stocks;
+    std::vector<std::string> valid_labels;
+    for (const auto& ticker : labels) {
+        std::string csv_path = data_dir + "/" + ticker + ".csv";
+        std::vector<StockRow> rows = load_csv(csv_path);
+        if (rows.empty()) {
+            std::cerr << "Warning: No data loaded for " << ticker
+                      << " (file: " << csv_path << "), skipping." << std::endl;
+            continue;
+        }
+        all_stocks.push_back(std::move(rows));
+        valid_labels.push_back(ticker);
+    }
+
+    // Exit if no stocks had valid data
+    if (all_stocks.empty()) {
+        std::cerr << "Error: No valid stock data loaded. Exiting." << std::endl;
+        return 1;
+    }
+
+    // Use valid_labels going forward (tickers that actually had data)
+    labels = valid_labels;
 
     // Print raw loaded data before alignment modifies the vectors
     std::cout << "=== Stock Data Summary ===" << std::endl << std::endl;
-    print_summary(aapl);
-    print_summary(bobs);
-    print_summary(msft);
+    for (size_t i = 0; i < all_stocks.size(); i++) {
+        print_summary(all_stocks[i]);
+    }
 
-    // Align all three stocks to a common set of timestamps.
-    // Stocks with missing timestamps (e.g. BOBS has gaps from low liquidity)
-    // are forward-filled from their last known row.
+    // Build pointer vector for align_timestamps (expects vector of pointers)
+    std::vector<std::vector<StockRow>*> stock_ptrs;
+    for (auto& stock : all_stocks) {
+        stock_ptrs.push_back(&stock);
+    }
+
+    // Align all stocks to a common set of timestamps.
+    // Stocks with missing timestamps are forward-filled from their last known row.
     std::vector<size_t> original_sizes;
-    align_timestamps({&aapl, &bobs, &msft}, original_sizes);
+    align_timestamps(stock_ptrs, original_sizes);
 
     // Print alignment summary showing how many rows were filled per stock
-    std::vector<std::string> labels = {"AAPL", "BOBS", "MSFT"};
-    std::vector<size_t> aligned_sizes = {aapl.size(), bobs.size(), msft.size()};
+    std::vector<size_t> aligned_sizes;
+    for (const auto& stock : all_stocks) {
+        aligned_sizes.push_back(stock.size());
+    }
     print_alignment_summary(labels, original_sizes, aligned_sizes);
 
     // Compute per-minute returns for each aligned stock series.
     // r_t = (price_t - price_{t-1}) / price_{t-1}
     // First element is 0.0 (no prior price), so vectors stay index-aligned.
-    std::vector<double> aapl_returns = compute_returns(aapl);
-    std::vector<double> bobs_returns = compute_returns(bobs);
-    std::vector<double> msft_returns = compute_returns(msft);
-
+    std::vector<std::vector<double>> all_returns;
     std::cout << "=== Returns Summary ===" << std::endl;
-    print_returns_summary("AAPL", aapl_returns);
-    print_returns_summary("BOBS", bobs_returns);
-    print_returns_summary("MSFT", msft_returns);
+    for (size_t i = 0; i < all_stocks.size(); i++) {
+        std::vector<double> returns = compute_returns(all_stocks[i]);
+        print_returns_summary(labels[i], returns);
+        all_returns.push_back(std::move(returns));
+    }
     std::cout << std::endl;
-
-    // Bundle return vectors for matrix computation
-    std::vector<std::vector<double>> all_returns = {
-        aapl_returns, bobs_returns, msft_returns
-    };
 
     // Compute mean return per stock (skip index 0 which is always 0.0)
     std::vector<double> mean_returns = compute_mean_returns(all_returns);
 
-    // Build 3x3 sample covariance matrix with Bessel's correction
+    // Build NxN sample covariance matrix with Bessel's correction
     std::vector<std::vector<double>> cov_matrix =
         compute_covariance_matrix(all_returns, mean_returns);
 
@@ -1269,26 +1308,26 @@ int main() {
     print_optimal_portfolio(labels, frontier, optimal_idx);
 
     // Gather current prices from the last aligned row of each stock
-    std::vector<double> current_prices = {
-        aapl.back().current_price,
-        bobs.back().current_price,
-        msft.back().current_price
-    };
+    std::vector<double> current_prices;
+    for (const auto& stock : all_stocks) {
+        current_prices.push_back(stock.back().current_price);
+    }
 
-    // Compute share allocation: floor(w_i * $90,000 / price_i) per stock
+    // Compute share allocation: floor(w_i * $90,000,000 / price_i) per stock
     // Rounding remainders accumulate back into the cash reserve
     double investable_capital = 90000000.0;
     std::vector<Allocation> allocation = compute_allocation(
         labels, frontier[optimal_idx].weights, current_prices, investable_capital);
     print_allocation(labels, allocation, investable_capital);
 
-    // Step 8: Compare target vs current allocation and compute trades
+    // Compare target vs current allocation and compute trades
     double total_capital = 100000000.0;   // total fund size ($100M)
     double cash_floor_pct = 0.05;        // 5% minimum cash reserve
     double cash_floor = cash_floor_pct * total_capital;  // $5,000,000
 
     // Load current holdings from CSV (0 shares on first run if file absent)
-    std::string holdings_file = "holdings.csv";
+    // Holdings file lives in the output directory
+    std::string holdings_file = output_dir + "/holdings.csv";
     std::vector<Holding> holdings = load_holdings(holdings_file, labels);
 
     // Compute trade deltas with 5% cash floor enforcement
@@ -1302,8 +1341,8 @@ int main() {
     print_trades(trades, available_cash, cash_floor);
     save_holdings(holdings_file, trades);
 
-    // Write all trades (buy/sell/hold) to trades.csv
-    write_trades_csv("trades.csv", trades, available_cash);
+    // Write all trades (buy/sell/hold) to portfolio.csv in the output directory
+    write_trades_csv(output_dir + "/portfolio.csv", trades, available_cash);
 
     return 0;
 }

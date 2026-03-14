@@ -29,19 +29,25 @@ A hackathon project built for UNIHACK 2026.
   - CSV columns: `id, category, datetime, headline, source, summary, url, image, related`
 - **Time rewind mode** — set `TIME_REWIND_HOURS=N` in `.env` to shift the app's clock N hours into the past; yfinance fetches candles from the earlier window and Finnhub news is filtered to exclude articles published after the simulated time (set to `0` or leave unset for real-time behaviour)
 - **Prediction module** (C++) — loads and parses per-ticker CSV data for stock price prediction
-  - Reads CSV files from `backend/prediction/test_data/` (AAPL, BOBS, MSFT)
+  - CLI interface: `./prediction.exe <data_dir> <output_dir> <TICKER1> [TICKER2] ...` — accepts any number of tickers dynamically
+  - Reads CSV files from the specified data directory (one file per ticker: `<ticker>.csv`)
   - Parses timestamps, prices, volume, and market cap into `StockRow` structs
   - Sorts data chronologically for time-series analysis
-  - **Timestamp alignment** — aligns all stocks to a common timestamp index using forward-fill, handling gaps from low-liquidity trading (e.g. BOBS has fewer rows than AAPL/MSFT)
+  - **Timestamp alignment** — aligns all stocks to a common timestamp index using forward-fill, handling gaps from low-liquidity trading
   - **Per-minute returns** — computes simple returns `r_t = (price_t - price_{t-1}) / price_{t-1}` for each aligned stock series; return vectors are same-length as input (index 0 = 0.0) to stay aligned with timestamps
-  - **Covariance matrix** — computes mean returns and a 3×3 sample covariance matrix (with Bessel's correction) from the per-minute return vectors; exploits matrix symmetry and prints a labelled grid for verification
+  - **Covariance matrix** — computes mean returns and an NxN sample covariance matrix (with Bessel's correction) from the per-minute return vectors; exploits matrix symmetry and prints a labelled grid for verification
   - **Efficient frontier sampling** — generates ~1000 random long-only portfolios (weights ≥ 0, sum to 1) using uniform sampling + normalization, computes each portfolio's expected return (w^T * μ) and risk (√(w^T Σ w)), and identifies the min-variance and max-return portfolios
-  - **Optimal portfolio selection** — finds the portfolio with the highest Sharpe ratio S = (r_p − r_f) / σ_p across all frontier portfolios (risk-free rate defaults to 0.0 for per-minute returns); prints the optimal weights (w1*, w2*, w3*), Sharpe ratio, expected return, and risk
+  - **Optimal portfolio selection** — finds the portfolio with the highest Sharpe ratio S = (r_p − r_f) / σ_p across all frontier portfolios (risk-free rate defaults to 0.0 for per-minute returns)
   - **Share allocation** — converts optimal weights into concrete whole-share counts using $90M investable capital and current stock prices; uses `floor()` rounding (no fractional shares) and reports per-stock invested amounts plus total rounding remainder returned to the cash reserve
   - **Trade plan computation** — compares target allocation against current holdings (read from `holdings.csv`), computes per-stock buy/sell/hold deltas, executes sells first to free cash, then processes buys with a 5% cash floor ($5M of $100M total capital) to ensure minimum liquidity; partial buys are allowed when full buys would breach the floor
-  - **Holdings persistence** — reads/writes `backend/prediction/holdings.csv` to track current portfolio positions across runs; first run starts with 0 shares, subsequent runs detect existing positions and only trade the difference
-  - **Trade output CSV** — writes all trades (BUY, SELL, and HOLD) to `backend/prediction/trades.csv` with columns `ticker, action, amount_of_shares, total_change`; includes a `CASH_RESERVE` summary row showing the post-trade cash balance
+  - **Holdings persistence** — reads/writes `holdings.csv` in the output directory to track current portfolio positions across runs; first run starts with 0 shares, subsequent runs detect existing positions and only trade the difference
+  - **Trade output CSV** — writes all trades (BUY, SELL, and HOLD) to `portfolio.csv` in the output directory with columns `ticker, action, amount_of_shares, total_change`; includes a `CASH_RESERVE` summary row showing the post-trade cash balance
   - Build: `cd backend/prediction && g++ -std=c++17 -o prediction prediction.cpp`
+- **Prediction endpoints** — start/stop a background loop that re-runs the C++ prediction after all tracked stocks have fresh data
+  - `POST /predict` — start the prediction loop (409 if already running, 400 if no stocks tracked)
+  - `DELETE /predict` — stop the prediction loop (404 if not running)
+  - Results are written to `backend/predictions/portfolio.csv`
+  - The prediction loop automatically picks up newly added/removed tickers each cycle
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -71,12 +77,13 @@ unihack-hackathon-submission/
 │   │   └── stock_training_data/ # Per-ticker CSV files (auto-created at runtime)
 │   ├── prediction/              # C++ stock prediction module
 │   │   ├── prediction.cpp       # CSV loader, parser, and prediction driver
-│   │   ├── holdings.csv         # Current portfolio positions (auto-generated at runtime)
-│   │   ├── trades.csv           # Executed trades output (auto-generated at runtime)
 │   │   └── test_data/           # Test CSV files (AAPL.csv, BOBS.csv, MSFT.csv)
+│   ├── predictions/             # Prediction output directory (auto-created at runtime)
+│   │   ├── holdings.csv         # Current portfolio positions (auto-generated)
+│   │   └── portfolio.csv        # Trade decisions output (auto-generated)
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
-│   ├── main.py                  # FastAPI app with stock tracking and news tracking
+│   ├── main.py                  # FastAPI app with stock tracking, news, and prediction
 │   └── requirements.txt         # Python dependencies
 ├── frontend/
 │   ├── public/                # Static assets (favicon, icons)
