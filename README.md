@@ -75,6 +75,8 @@ unihack-hackathon-submission/
 │   ├── index.html             # HTML shell
 │   ├── package.json
 │   └── vite.config.js         # Vite config with @ alias
+├── planning/
+│   └── sms-notifications.md   # Two-way SMS feature plan (Twilio)
 ├── CLAUDE.md                  # Instructions for Claude AI instances
 └── README.md                  # This file
 ```
