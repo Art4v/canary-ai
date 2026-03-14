@@ -158,7 +158,7 @@ unihack-hackathon-submission/
 │   │   │       ├── TradesWindow.jsx / .css  # Trades section content
 │   │   │       ├── ChatWindow.jsx / .css    # AI chat interface
 │   │   │       ├── PortfolioWindow.jsx / .css # Portfolio overview
-│   │   │       └── SettingsWindow.jsx / .css # Settings panel
+│   │   │       └── SettingsWindow.jsx / .css # Settings panel (Username, API Key, Email, Password, Trading Style, Notifications)
 │   │   ├── hooks/             # Custom React hooks
 │   │   │   ├── useTheme.jsx   # Theme management hook
 │   │   │   ├── useDrag.jsx    # Draggable position hook

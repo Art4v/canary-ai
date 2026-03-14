@@ -7,12 +7,13 @@ import './SettingsWindow.css'
  * SettingsWindow — Lavender-themed settings panel rendered inside the
  * generic draggable/resizable Window shell.
  *
- * Layout: 3-column grid (label | control | action) with 5 rows:
- *   1. API Key    — masked password input + Save
- *   2. Email      — text input + Save
- *   3. Password   — password input + Save
- *   4. Trading Style — dropdown select + Save
- *   5. Notifications — toggle slider (no action cell)
+ * Layout: 3-column grid (label | control | action) with 6 rows:
+ *   1. Username   — text input + Save
+ *   2. API Key    — masked password input + Save
+ *   3. Email      — text input + Save
+ *   4. Password   — password input + Save
+ *   5. Trading Style — dropdown select + Save
+ *   6. Notifications — toggle slider (no action cell)
  *
  * Save handlers are stubs (console.log only) — database integration
  * will be added in a later phase.
@@ -27,6 +28,7 @@ import './SettingsWindow.css'
 export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
   /* ── Local State ──
      Each setting field has its own piece of state so rows update independently. */
+  const [username, setUsername] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -36,6 +38,11 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
   /* ── Stub Save Handlers ──
      Each row has its own save function. Currently they just log to the console;
      real persistence will be wired up when the backend is ready. */
+
+  /** Save the username (stub) */
+  const handleSaveUsername = () => {
+    console.log('Save Username:', username)
+  }
 
   /** Save the API key (stub) */
   const handleSaveApiKey = () => {
@@ -74,7 +81,27 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
             Each row is a triplet of .settings-cell elements. */}
         <div className="settings-grid">
 
-          {/* ── Row 1: API Key ── */}
+          {/* ── Row 1: Username ── */}
+          {/* Label */}
+          <div className="settings-cell settings-label">Username</div>
+          {/* Control — text input for changing the display username */}
+          <div className="settings-cell">
+            <input
+              className="settings-input"
+              type="text"
+              placeholder="Enter new username…"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+            />
+          </div>
+          {/* Action — per-row save button */}
+          <div className="settings-cell">
+            <button className="settings-save-btn" onClick={handleSaveUsername}>
+              Save
+            </button>
+          </div>
+
+          {/* ── Row 2: API Key ── */}
           {/* Label */}
           <div className="settings-cell settings-label">API Key</div>
           {/* Control — masked password input so the key is hidden */}
@@ -94,7 +121,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
             </button>
           </div>
 
-          {/* ── Row 2: Email ── */}
+          {/* ── Row 3: Email ── */}
           {/* Label */}
           <div className="settings-cell settings-label">Email</div>
           {/* Control — standard text input */}
@@ -114,7 +141,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
             </button>
           </div>
 
-          {/* ── Row 3: Password ── */}
+          {/* ── Row 4: Password ── */}
           {/* Label */}
           <div className="settings-cell settings-label">Password</div>
           {/* Control — password input for hidden entry */}
@@ -134,7 +161,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
             </button>
           </div>
 
-          {/* ── Row 4: Trading Style ── */}
+          {/* ── Row 5: Trading Style ── */}
           {/* Label */}
           <div className="settings-cell settings-label">Trading Style</div>
           {/* Control — dropdown select with three strategy options */}
@@ -156,7 +183,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
             </button>
           </div>
 
-          {/* ── Row 5: Notifications ── */}
+          {/* ── Row 6: Notifications ── */}
           {/* Label */}
           <div className="settings-cell settings-label">Notifications</div>
           {/* Control — CSS-only toggle switch (hidden checkbox + styled slider) */}
