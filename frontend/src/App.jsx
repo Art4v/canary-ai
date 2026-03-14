@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import SkyBackground from './features/sky/SkyBackground.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
 import Dock from './features/dock/Dock.jsx'
@@ -11,6 +12,8 @@ import { SnapProvider } from './contexts/SnapContext.jsx'
 import SnapPreview from './components/SnapPreview.jsx'
 import SnapSeams from './components/SnapSeams.jsx'
 import SnapLayoutBar from './components/SnapLayoutBar.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import RegisterPage from './pages/RegisterPage.jsx'
 
 /** Cascade offset (px) — each newly opened window shifts by this amount */
 const CASCADE_OFFSET = 30
@@ -127,90 +130,100 @@ function App() {
   }, [zOrder])
 
   return (
-    <>
-      <SkyBackground />
-      <ThemeToggle />
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        Canary AI
-      </div>
-      {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
-      <Dock openSections={openSections} onNavigate={handleNavigate} />
+    <Routes>
+      {/* ── Auth Routes ── */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
-      {/* ── Corner Launchers ──
-          Two expandable quick-access menus in the bottom-left and bottom-right
-          corners. They mirror the Dock's 5 nav buttons plus a "Clear All" action
-          for faster access without moving the cursor to the central Dock. */}
-      <CornerLauncher
-        position="left"
-        openSections={openSections}
-        onNavigate={handleNavigate}
-        onClearAll={clearAll}
-      />
-      <CornerLauncher
-        position="right"
-        openSections={openSections}
-        onNavigate={handleNavigate}
-        onClearAll={clearAll}
-      />
+      {/* ── Dashboard Route (default) ──
+          Contains the full desktop environment: sky, dock, windows, etc. */}
+      <Route path="/" element={
+        <>
+          <SkyBackground />
+          <ThemeToggle />
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            Canary AI
+          </div>
+          {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
+          <Dock openSections={openSections} onNavigate={handleNavigate} />
 
-      {/* SnapProvider wraps all windows and overlay components so they
-          share the same snap state (bonds, snap preview, window registry) */}
-      <SnapProvider>
-        {/* ── Section Windows ──
-            Conditionally render each open window. Each receives windowId,
-            onClose, onFocus (bring-to-front), zIndex, and a cascaded initialPosition. */}
-        {openSections.has('trades') && (
-          <TradesWindow
-            windowId="trades"
-            onClose={() => closeSection('trades')}
-            onFocus={() => bringToFront('trades')}
-            zIndex={getZIndex('trades')}
-            initialPosition={cascadeRef.current['trades']}
+          {/* ── Corner Launchers ──
+              Two expandable quick-access menus in the bottom-left and bottom-right
+              corners. They mirror the Dock's 5 nav buttons plus a "Clear All" action
+              for faster access without moving the cursor to the central Dock. */}
+          <CornerLauncher
+            position="left"
+            openSections={openSections}
+            onNavigate={handleNavigate}
+            onClearAll={clearAll}
           />
-        )}
-
-        {/* Chat window — purple-themed AI chat interface */}
-        {openSections.has('chats') && (
-          <ChatWindow
-            windowId="chats"
-            onClose={() => closeSection('chats')}
-            onFocus={() => bringToFront('chats')}
-            zIndex={getZIndex('chats')}
-            initialPosition={cascadeRef.current['chats']}
+          <CornerLauncher
+            position="right"
+            openSections={openSections}
+            onNavigate={handleNavigate}
+            onClearAll={clearAll}
           />
-        )}
 
-        {/* Portfolio window — yellow/cream-themed portfolio overview */}
-        {openSections.has('portfolio') && (
-          <PortfolioWindow
-            windowId="portfolio"
-            onClose={() => closeSection('portfolio')}
-            onFocus={() => bringToFront('portfolio')}
-            zIndex={getZIndex('portfolio')}
-            initialPosition={cascadeRef.current['portfolio']}
-          />
-        )}
+          {/* SnapProvider wraps all windows and overlay components so they
+              share the same snap state (bonds, snap preview, window registry) */}
+          <SnapProvider>
+            {/* ── Section Windows ──
+                Conditionally render each open window. Each receives windowId,
+                onClose, onFocus (bring-to-front), zIndex, and a cascaded initialPosition. */}
+            {openSections.has('trades') && (
+              <TradesWindow
+                windowId="trades"
+                onClose={() => closeSection('trades')}
+                onFocus={() => bringToFront('trades')}
+                zIndex={getZIndex('trades')}
+                initialPosition={cascadeRef.current['trades']}
+              />
+            )}
 
-        {/* Settings window — lavender-themed settings panel */}
-        {openSections.has('settings') && (
-          <SettingsWindow
-            windowId="settings"
-            onClose={() => closeSection('settings')}
-            onFocus={() => bringToFront('settings')}
-            zIndex={getZIndex('settings')}
-            initialPosition={cascadeRef.current['settings']}
-          />
-        )}
+            {/* Chat window — purple-themed AI chat interface */}
+            {openSections.has('chats') && (
+              <ChatWindow
+                windowId="chats"
+                onClose={() => closeSection('chats')}
+                onFocus={() => bringToFront('chats')}
+                zIndex={getZIndex('chats')}
+                initialPosition={cascadeRef.current['chats']}
+              />
+            )}
 
-        {/* ── Snap Overlays ──
-            Preview ghost rectangle appears during drag when near another window's edge.
-            Seams render along bonded edges with double-click-to-unmerge.
-            Layout bar slides down from top when dragging a window near the top edge. */}
-        <SnapPreview />
-        <SnapSeams />
-        <SnapLayoutBar />
-      </SnapProvider>
-    </>
+            {/* Portfolio window — yellow/cream-themed portfolio overview */}
+            {openSections.has('portfolio') && (
+              <PortfolioWindow
+                windowId="portfolio"
+                onClose={() => closeSection('portfolio')}
+                onFocus={() => bringToFront('portfolio')}
+                zIndex={getZIndex('portfolio')}
+                initialPosition={cascadeRef.current['portfolio']}
+              />
+            )}
+
+            {/* Settings window — lavender-themed settings panel */}
+            {openSections.has('settings') && (
+              <SettingsWindow
+                windowId="settings"
+                onClose={() => closeSection('settings')}
+                onFocus={() => bringToFront('settings')}
+                zIndex={getZIndex('settings')}
+                initialPosition={cascadeRef.current['settings']}
+              />
+            )}
+
+            {/* ── Snap Overlays ──
+                Preview ghost rectangle appears during drag when near another window's edge.
+                Seams render along bonded edges with double-click-to-unmerge.
+                Layout bar slides down from top when dragging a window near the top edge. */}
+            <SnapPreview />
+            <SnapSeams />
+            <SnapLayoutBar />
+          </SnapProvider>
+        </>
+      } />
+    </Routes>
   )
 }
 

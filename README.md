@@ -7,9 +7,9 @@ A hackathon project built for UNIHACK 2026.
 | Layer    | Technology                  |
 | -------- | --------------------------- |
 | Frontend | React 19 + Vite 8           |
+| Routing  | React Router DOM            |
 | Backend  | FastAPI + Uvicorn (Python)  |
 | Prediction | C++17 (g++)               |
-| Database | Supabase (PostgreSQL)       |
 | Data     | yfinance, Finnhub API       |
 | Icons    | Lucide React                |
 | Animation| GSAP                        |
@@ -47,18 +47,14 @@ A hackathon project built for UNIHACK 2026.
 - **Prediction endpoints** — start/stop a background loop that re-runs the C++ prediction after all tracked stocks have fresh data
   - `POST /predict` — start the prediction loop (409 if already running, 400 if no stocks tracked)
   - `DELETE /predict` — stop the prediction loop (404 if not running)
-  - Results are written to `backend/trades/portfolio.csv`
+  - Results are written to `backend/predictions/portfolio.csv`
   - The prediction loop automatically picks up newly added/removed tickers each cycle
-- **Supabase database endpoints** — read-only access to the Supabase PostgreSQL database (returns 503 when credentials are not configured)
-  - `GET /database/users` — all rows from the `users` table
-  - `GET /database/portfolios` — all rows from the `portfolios` table
-  - `GET /database/holdings` — all rows from the `holdings` table
-  - `GET /database/transactions` — all rows from the `transactions` table
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
 ### Frontend
 
+- **Login & Register pages** — separate routes (`/login`, `/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; stub form submission (console.log + redirect to dashboard)
 - **Theme system** — three modes: `auto`, `night`, and `day`
   - Auto mode cycles based on AEST time (day between 10:00–16:00, night otherwise) and re-evaluates every 60 seconds
   - Managed by `useTheme` hook and `ThemeProvider` context
@@ -71,11 +67,12 @@ A hackathon project built for UNIHACK 2026.
 - **Path aliasing** — `@` maps to `./src` via Vite config
 - **Multi-window support** — multiple section windows can be open simultaneously with cascaded positioning (+30px offset per window), bring-to-front on click (z-order stacking), and independent close via window X button or Dock toggle; all open windows are highlighted in the Dock
 - **Lego-style window snapping** — drag a window near another's edge and a semi-transparent ghost rectangle preview appears at ~30px proximity showing exactly where the window will land; release while the preview is visible to snap with a GSAP animation (snap-on-release); snapped windows move as a group when dragged; resize a shared edge and the bonded window resizes in sync; double-click a seam to unmerge with a playful bounce animation; supports N-window chaining across all 4 edges
-- **Snap Layout Bar** — drag a window to the top of the viewport to reveal a Windows 11-style layout toolbar with 6 arrangements (full, halves, quarters, columns); hovering a zone shows a full-size translucent preview overlay; releasing snaps the window to that zone with a GSAP animation, resizing and repositioning it
 - **Cloud-shaped navigation dock** — large (~750×300px) cloud dock positioned just below center of the viewport, built with inline SVG ellipses (no drop shadow); contains the Canary logo with a GSAP bobbing animation, a "Canary AI" branding label, and 5 cartoony, puffy nav buttons (Chat, Trades, Portfolio, Settings, Help) styled as rounded squares with a 3D embossed effect (darker border, lighter fill, bottom shadow) and text labels; cloud fill uses `var(--color-cloud)` so it adapts to day/night mode automatically
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
 - **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
 - **Corner Launchers** — two expandable quick-access menus in the bottom-left and bottom-right corners of the viewport; each features a 48px puffy trigger button (`+` icon that rotates to `×` on expand), 5 section-colored toggle buttons matching the Dock's navigation, and a "Clear All" action to close every open window; menu items animate in with staggered GSAP scale+fade, open windows show an outline ring, and both launchers work independently
+- **Draggable & resizable window system** — generic `Window` shell component in `features/window/` with `useDrag` and `useResize` hooks; supports 8-direction resize handles, viewport-clamped dragging via the header bar, GSAP pop-in animation, per-section color theming via CSS custom properties, and a `closeIcon` prop for per-window custom close button images
+- **Trades window** — opened/closed by the Trades dock button; contains a Buy/Sell toggle, empty content area, and a puffy 3D "Execute Order" button; wraps the generic Window shell with trades color tokens and a custom close icon PNG
 - **Modular feature folders** — scaffolded directories for `dock`, `portfolio`, `sky`, and `window` features
 
 ## Project Structure
@@ -89,7 +86,7 @@ unihack-hackathon-submission/
 │   ├── prediction/              # C++ stock prediction module
 │   │   ├── prediction.cpp       # CSV loader, parser, and prediction driver
 │   │   └── test_data/           # Test CSV files (AAPL.csv, BOBS.csv, MSFT.csv)
-│   ├── trades/                  # Trade output directory (auto-created at runtime)
+│   ├── predictions/             # Prediction output directory (auto-created at runtime)
 │   │   ├── holdings.csv         # Current portfolio positions (auto-generated)
 │   │   └── portfolio.csv        # Trade decisions output (auto-generated)
 │   ├── .env.example             # Template for required environment variables
@@ -100,20 +97,33 @@ unihack-hackathon-submission/
 │   ├── public/                # Static assets (favicon, icons)
 │   ├── src/
 │   │   ├── assets/
-│   │   │   └── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
-│   │   ├── components/        # Reusable UI components (GlassCard, CornerLauncher, SnapPreview, SnapSeams, SnapLayoutBar)
+│   │   │   ├── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
+│   │   │   └── trades/        # Trades section images (close.png, etc.)
+│   │   ├── components/        # Reusable UI components (GlassCard, CornerLauncher, SnapPreview, SnapSeams)
+│   │   ├── contexts/          # React contexts (SnapContext)
 │   │   ├── data/              # Data files
 │   │   ├── features/          # Feature modules
 │   │   │   ├── dock/          # Cloud-shaped navigation dock (Dock.jsx, Dock.css)
 │   │   │   ├── portfolio/     # Portfolio feature (scaffold)
 │   │   │   ├── sky/           # Animated sky background, clouds, birds
-│   │   │   └── window/        # Window shell, TradesWindow, ChatWindow
-│   │   ├── contexts/          # React contexts (SnapContext)
-│   │   ├── hooks/             # Custom React hooks (useTheme, useSnapDrag, useSnapResize)
+│   │   │   └── window/        # Draggable/resizable window system
+│   │   │       ├── Window.jsx / .css       # Generic window shell (drag, resize, pop-in)
+│   │   │       ├── TradesWindow.jsx / .css  # Trades section content
+│   │   │       ├── ChatWindow.jsx / .css    # AI chat interface
+│   │   │       ├── PortfolioWindow.jsx / .css # Portfolio overview
+│   │   │       └── SettingsWindow.jsx / .css # Settings panel
+│   │   ├── hooks/             # Custom React hooks
+│   │   │   ├── useTheme.jsx   # Theme management hook
+│   │   │   ├── useDrag.jsx    # Draggable position hook
+│   │   │   └── useResize.jsx  # Resizable dimensions hook
+│   │   ├── pages/             # Route-level page components
+│   │   │   ├── AuthPages.css  # Shared auth page styles (glassmorphic card, puffy inputs)
+│   │   │   ├── LoginPage.jsx  # Login form page (/login)
+│   │   │   └── RegisterPage.jsx # Register form page (/register)
 │   │   ├── styles/            # Global styles (base.css, tokens.css)
 │   │   ├── utils/             # Utility functions
-│   │   ├── App.jsx            # Root application component
-│   │   └── main.jsx           # Entry point
+│   │   ├── App.jsx            # Root application component (Routes)
+│   │   └── main.jsx           # Entry point (BrowserRouter)
 │   ├── index.html             # HTML shell
 │   ├── package.json
 │   └── vite.config.js         # Vite config with @ alias
@@ -136,7 +146,7 @@ unihack-hackathon-submission/
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then edit .env and add your Finnhub API key + Supabase credentials
+cp .env.example .env   # then edit .env and add your Finnhub API key
 python main.py
 ```
 
