@@ -28,7 +28,7 @@ app = FastAPI()
 DATA_DIR = "data"
 STOCK_DATA_DIR = os.path.join(DATA_DIR, "stock_training_data")
 NEWS_DIR = os.path.join(DATA_DIR, "news")
-PREDICTIONS_DIR = "predictions"
+PREDICTIONS_DIR = "trades"
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
 FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news"
@@ -495,8 +495,8 @@ async def start_prediction():
     cycle; skips with a warning if none are found).
 
     Writes each cycle:
-      - predictions/portfolio.csv  — trade actions (BUY / SELL / HOLD)
-      - predictions/holdings.csv   — updated position snapshot
+      - trades/portfolio.csv  — trade actions (BUY / SELL / HOLD)
+      - trades/holdings.csv   — updated position snapshot
 
     Returns 409 if the prediction loop is already running.
     """
@@ -573,7 +573,7 @@ async def startup_event():
             shutil.rmtree(directory)
         os.makedirs(directory, exist_ok=True)
 
-    # Ensure the predictions output directory exists. Not wiped on restart
+    # Ensure the trades output directory exists. Not wiped on restart
     # so holdings.csv survives across server restarts for trade continuity.
     os.makedirs(PREDICTIONS_DIR, exist_ok=True)
 
