@@ -37,10 +37,10 @@ const NAV_ITEMS = [
  * @returns {JSX.Element} The dock component
  */
 /**
- * @param {string|null} activeSection  Currently open section key (lifted to App)
- * @param {Function}    onNavigate     Callback to set the active section
+ * @param {Set<string>} openSections   Set of currently open section keys
+ * @param {Function}    onNavigate     Callback to toggle a section open/closed
  */
-export default function Dock({ activeSection, onNavigate }) {
+export default function Dock({ openSections, onNavigate }) {
 
   /* Ref for the logo element — used by GSAP for the bobbing animation */
   const logoRef = useRef(null)
@@ -112,11 +112,11 @@ export default function Dock({ activeSection, onNavigate }) {
           {NAV_ITEMS.map(({ key, label, Icon, color }) => (
             <button
               key={key}
-              className={`dock-nav-btn${activeSection === key ? ' dock-nav-btn--active' : ''}`}
+              className={`dock-nav-btn${openSections.has(key) ? ' dock-nav-btn--active' : ''}`}
               title={label}
               aria-label={label}
-              /* Toggle behavior: clicking the active section again closes it */
-              onClick={() => onNavigate(activeSection === key ? null : key)}
+              /* Toggle behavior: clicking an open section closes it; clicking a closed one opens it */
+              onClick={() => onNavigate(key)}
               /* Per-button section colors via inline CSS custom properties.
                  The CSS file references --btn-primary / --btn-dark / --btn-light
                  for border, fill, and active states. */

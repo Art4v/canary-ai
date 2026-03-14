@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import SkyBackground from './features/sky/SkyBackground.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
 import Dock from './features/dock/Dock.jsx'
@@ -7,19 +7,106 @@ import ChatWindow from './features/window/ChatWindow.jsx'
 import PortfolioWindow from './features/window/PortfolioWindow.jsx'
 import SettingsWindow from './features/window/SettingsWindow.jsx'
 
+/** Cascade offset (px) — each newly opened window shifts by this amount */
+const CASCADE_OFFSET = 30
+
 /**
  * App — root component that orchestrates the sky background, theme toggle,
- * navigation dock, and any active section windows.
+ * navigation dock, and any open section windows.
  *
- * Lifts `activeSection` state here so the Dock and windows stay in sync:
- * clicking a dock button opens the matching window; clicking again (or the
- * window's X) closes it.
+ * Supports multiple simultaneous windows with:
+ *   - Independent open/close via Dock toggle or window X button
+ *   - Cascaded initial positioning so windows don't stack directly on top of each other
+ *   - Bring-to-front on click (managed via a z-order array)
  *
  * @returns {JSX.Element}
  */
 function App() {
-  /* Which section window is currently open (null = none) */
-  const [activeSection, setActiveSection] = useState(null)
+  /* Set of currently open section keys (e.g. "trades", "chats") */
+  const [openSections, setOpenSections] = useState(new Set())
+
+  /* Ordered array of open keys — last element is the topmost window */
+  const [zOrder, setZOrder] = useState([])
+
+  /* Stores the cascade position assigned to each key when it was opened.
+     Keyed by section key, value is { x, y }. Cleaned up on close. */
+  const cascadeRef = useRef({})
+
+  /**
+   * handleNavigate — toggle a section open or closed.
+   * Called from the Dock when a nav button is clicked.
+   *
+   * If the section is already open it is closed (removed from openSections,
+   * zOrder, and cascadeRef). If closed it is opened with a cascaded position
+   * offset based on how many windows are currently open.
+   *
+   * @param {string} key  Section key to toggle
+   */
+  const handleNavigate = useCallback((key) => {
+    setOpenSections(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        /* Close: remove from all tracking structures */
+        next.delete(key)
+        delete cascadeRef.current[key]
+        setZOrder(z => z.filter(k => k !== key))
+      } else {
+        /* Open: compute cascade offset and add to tracking */
+        const count = next.size
+        const baseX = window.innerWidth / 2 - 220
+        const baseY = window.innerHeight / 2 - 250
+        cascadeRef.current[key] = {
+          x: baseX + count * CASCADE_OFFSET,
+          y: baseY + count * CASCADE_OFFSET,
+        }
+        next.add(key)
+        setZOrder(z => [...z, key])
+      }
+      return next
+    })
+  }, [])
+
+  /**
+   * closeSection — close a single section window (used by window X buttons).
+   * Removes the key from openSections, zOrder, and cascadeRef.
+   *
+   * @param {string} key  Section key to close
+   */
+  const closeSection = useCallback((key) => {
+    setOpenSections(prev => {
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    delete cascadeRef.current[key]
+    setZOrder(z => z.filter(k => k !== key))
+  }, [])
+
+  /**
+   * bringToFront — move a window to the top of the z-order stack.
+   * Called on mousedown anywhere on the window.
+   * No-ops if the key is already the topmost window.
+   *
+   * @param {string} key  Section key to bring to front
+   */
+  const bringToFront = useCallback((key) => {
+    setZOrder(prev => {
+      if (prev[prev.length - 1] === key) return prev
+      return [...prev.filter(k => k !== key), key]
+    })
+  }, [])
+
+  /**
+   * getZIndex — compute the inline z-index for a given section key.
+   * Base z-index is 300 (above the Dock at 200); position in zOrder
+   * array adds an offset so the topmost window has the highest z-index.
+   *
+   * @param {string} key  Section key
+   * @returns {number}    z-index value
+   */
+  const getZIndex = useCallback((key) => {
+    return 300 + zOrder.indexOf(key)
+  }, [zOrder])
 
   return (
     <>
@@ -29,27 +116,48 @@ function App() {
         Canary AI
       </div>
       {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
-      <Dock activeSection={activeSection} onNavigate={setActiveSection} />
+      <Dock openSections={openSections} onNavigate={handleNavigate} />
 
       {/* ── Section Windows ──
-          Conditionally render the window for the active section.
-          Each window receives an onClose that clears the active section. */}
-      {activeSection === 'trades' && (
-        <TradesWindow onClose={() => setActiveSection(null)} />
+          Conditionally render each open window. Each receives onClose,
+          onFocus (bring-to-front), zIndex, and a cascaded initialPosition. */}
+      {openSections.has('trades') && (
+        <TradesWindow
+          onClose={() => closeSection('trades')}
+          onFocus={() => bringToFront('trades')}
+          zIndex={getZIndex('trades')}
+          initialPosition={cascadeRef.current['trades']}
+        />
       )}
 
       {/* Chat window — purple-themed AI chat interface */}
-      {activeSection === 'chats' && (
-        <ChatWindow onClose={() => setActiveSection(null)} />
+      {openSections.has('chats') && (
+        <ChatWindow
+          onClose={() => closeSection('chats')}
+          onFocus={() => bringToFront('chats')}
+          zIndex={getZIndex('chats')}
+          initialPosition={cascadeRef.current['chats']}
+        />
       )}
+
       {/* Portfolio window — yellow/cream-themed portfolio overview */}
-      {activeSection === 'portfolio' && (
-        <PortfolioWindow onClose={() => setActiveSection(null)} />
+      {openSections.has('portfolio') && (
+        <PortfolioWindow
+          onClose={() => closeSection('portfolio')}
+          onFocus={() => bringToFront('portfolio')}
+          zIndex={getZIndex('portfolio')}
+          initialPosition={cascadeRef.current['portfolio']}
+        />
       )}
-      
+
       {/* Settings window — lavender-themed settings panel */}
-      {activeSection === 'settings' && (
-        <SettingsWindow onClose={() => setActiveSection(null)} />
+      {openSections.has('settings') && (
+        <SettingsWindow
+          onClose={() => closeSection('settings')}
+          onFocus={() => bringToFront('settings')}
+          zIndex={getZIndex('settings')}
+          initialPosition={cascadeRef.current['settings']}
+        />
       )}
     </>
   )

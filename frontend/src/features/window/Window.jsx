@@ -26,6 +26,8 @@ const MIN_SIZE = { width: 300, height: 380 }
  * @param {{ width: number, height: number }} initialSize  Starting dimensions
  * @param {string}   closeIcon          Image src for the close button PNG (each window has its own colored icon)
  * @param {string}   colorTokenPrefix   Maps to CSS vars, e.g. "trades" → --color-trades-*
+ * @param {number}   [zIndex=300]       Inline z-index for multi-window stacking order
+ * @param {Function} [onFocus]          Called on mousedown to bring this window to front
  * @returns {JSX.Element}
  */
 export default function Window({
@@ -36,6 +38,8 @@ export default function Window({
   initialPosition = { x: window.innerWidth / 2 - 220, y: window.innerHeight / 2 - 250 },
   initialSize = { width: 440, height: 500 },
   colorTokenPrefix = 'trades',
+  zIndex = 300,
+  onFocus,
 }) {
   /* Ref for the outer container — used by GSAP for the pop-in animation */
   const windowRef = useRef(null)
@@ -63,12 +67,16 @@ export default function Window({
     <div
       ref={windowRef}
       className="window"
+      /* Bring this window to the front of the stack when clicked anywhere */
+      onMouseDown={onFocus}
       style={{
         /* Position and size driven by drag/resize hooks */
         left: position.x,
         top: position.y,
         width: size.width,
         height: size.height,
+        /* Dynamic z-index for multi-window stacking */
+        zIndex,
         /* Color tokens — consumed by Window.css as --win-primary / dark / light */
         '--win-primary': `var(--color-${colorTokenPrefix}-primary)`,
         '--win-dark':    `var(--color-${colorTokenPrefix}-dark)`,

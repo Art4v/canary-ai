@@ -3,11 +3,11 @@
    ══════════════════════════════════════════════════ */
 
 /* ── Outer Container ──
-   Fixed-position floating panel. z-index 300 keeps it above the Dock (200).
+   Fixed-position floating panel. z-index is set via inline style so
+   multi-window stacking order can be managed dynamically by App.
    Color tokens (--win-primary/dark/light) are set via inline style. */
 .window {
   position: fixed;
-  z-index: 300;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-card);

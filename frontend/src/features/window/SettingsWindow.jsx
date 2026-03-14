@@ -17,10 +17,13 @@ import './SettingsWindow.css'
  * Save handlers are stubs (console.log only) — database integration
  * will be added in a later phase.
  *
- * @param {Function} onClose  Called when the window's close button is clicked
+ * @param {Function} onClose          Called when the window's close button is clicked
+ * @param {Function} [onFocus]        Called on mousedown to bring window to front
+ * @param {number}   [zIndex]         Inline z-index for stacking order
+ * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function SettingsWindow({ onClose }) {
+export default function SettingsWindow({ onClose, onFocus, zIndex, initialPosition }) {
   /* ── Local State ──
      Each setting field has its own piece of state so rows update independently. */
   const [apiKey, setApiKey] = useState('')
@@ -60,6 +63,9 @@ export default function SettingsWindow({ onClose }) {
         onClose={onClose}
         closeIcon={closeIcon}
         colorTokenPrefix="settings"
+        onFocus={onFocus}
+        zIndex={zIndex}
+        initialPosition={initialPosition}
       >
         {/* ── Settings Grid ──
             3-column layout: label | control | action.

@@ -63,6 +63,7 @@ A hackathon project built for UNIHACK 2026.
 - **GSAP** animation library integrated
 - **Lucide React** icon library
 - **Path aliasing** — `@` maps to `./src` via Vite config
+- **Multi-window support** — multiple section windows can be open simultaneously with cascaded positioning (+30px offset per window), bring-to-front on click (z-order stacking), and independent close via window X button or Dock toggle; all open windows are highlighted in the Dock
 - **Cloud-shaped navigation dock** — large (~750×300px) cloud dock positioned just below center of the viewport, built with inline SVG ellipses (no drop shadow); contains the Canary logo with a GSAP bobbing animation, a "Canary AI" branding label, and 5 cartoony, puffy nav buttons (Chat, Trades, Portfolio, Settings, Help) styled as rounded squares with a 3D embossed effect (darker border, lighter fill, bottom shadow) and text labels; cloud fill uses `var(--color-cloud)` so it adapts to day/night mode automatically
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
 - **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell

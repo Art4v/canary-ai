@@ -13,16 +13,22 @@ import './PortfolioWindow.css'
  *
  * All values are hardcoded placeholders for now.
  *
- * @param {Function} onClose  Called when the window's X button is clicked
+ * @param {Function} onClose          Called when the window's X button is clicked
+ * @param {Function} [onFocus]        Called on mousedown to bring window to front
+ * @param {number}   [zIndex]         Inline z-index for stacking order
+ * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function PortfolioWindow({ onClose }) {
+export default function PortfolioWindow({ onClose, onFocus, zIndex, initialPosition }) {
   return (
     <Window
       title="Portfolio"
       onClose={onClose}
       closeIcon={closeIcon}
       colorTokenPrefix="portfolio"
+      onFocus={onFocus}
+      zIndex={zIndex}
+      initialPosition={initialPosition}
     >
       {/* ── Summary Card ──
           Full-width card split into left (value info) and right (market status).

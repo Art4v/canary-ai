@@ -23,10 +23,13 @@ const INITIAL_MESSAGES = [
  *   1. Scrollable message area — alternating bot/user speech bubbles with avatars
  *   2. Input bar — text field, new-conversation "+" button, and send "Enter" button
  *
- * @param {Function} onClose  Called when the window's X button is clicked
+ * @param {Function} onClose          Called when the window's X button is clicked
+ * @param {Function} [onFocus]        Called on mousedown to bring window to front
+ * @param {number}   [zIndex]         Inline z-index for stacking order
+ * @param {{ x: number, y: number }} [initialPosition]  Starting top-left coords
  * @returns {JSX.Element}
  */
-export default function ChatWindow({ onClose }) {
+export default function ChatWindow({ onClose, onFocus, zIndex, initialPosition }) {
   /* Chat message history — initialized with mock data */
   const [messages, setMessages] = useState(INITIAL_MESSAGES)
 
@@ -94,6 +97,9 @@ export default function ChatWindow({ onClose }) {
       onClose={onClose}
       closeIcon={closeIcon}
       colorTokenPrefix="chats"
+      onFocus={onFocus}
+      zIndex={zIndex}
+      initialPosition={initialPosition}
     >
       {/* ── Messages Area ──
           Scrollable container for all chat messages.
