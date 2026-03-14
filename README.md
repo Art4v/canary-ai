@@ -9,6 +9,7 @@ A hackathon project built for UNIHACK 2026.
 | Frontend | React 19 + Vite 8           |
 | Backend  | FastAPI + Uvicorn (Python)  |
 | Prediction | C++17 (g++)               |
+| Database | Supabase (PostgreSQL)       |
 | Data     | yfinance, Finnhub API       |
 | Icons    | Lucide React                |
 | Animation| GSAP                        |
@@ -48,6 +49,11 @@ A hackathon project built for UNIHACK 2026.
   - `DELETE /predict` — stop the prediction loop (404 if not running)
   - Results are written to `backend/trades/portfolio.csv`
   - The prediction loop automatically picks up newly added/removed tickers each cycle
+- **Supabase database endpoints** — read-only access to the Supabase PostgreSQL database (returns 503 when credentials are not configured)
+  - `GET /database/users` — all rows from the `users` table
+  - `GET /database/portfolios` — all rows from the `portfolios` table
+  - `GET /database/holdings` — all rows from the `holdings` table
+  - `GET /database/transactions` — all rows from the `transactions` table
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -126,7 +132,7 @@ unihack-hackathon-submission/
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # then edit .env and add your Finnhub API key
+cp .env.example .env   # then edit .env and add your Finnhub API key + Supabase credentials
 python main.py
 ```
 

@@ -18,6 +18,7 @@ import os
 import shutil
 import requests
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
 
@@ -41,6 +42,15 @@ POLL_INTERVAL_SECONDS = 60
 # published after the simulated time. When 0 or unset, behaviour is
 # identical to real-time.
 TIME_REWIND_HOURS = float(os.getenv("TIME_REWIND_HOURS", "0"))
+
+# Supabase connection — reads URL and anon/service key from .env.
+# When either value is missing, supabase_client stays None and the
+# /database/* endpoints return 503 instead of crashing the server.
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+supabase_client: Client | None = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 NEWS_CSV_COLUMNS = [
     "id", "category", "datetime", "headline",
@@ -561,6 +571,61 @@ def prediction_status():
         "poll_interval_s": POLL_INTERVAL_SECONDS,
         "tracked_tickers": sorted(stock_tasks.keys()),
     }
+
+
+# ── Database endpoints ────────────────────────────────────────────────────
+# Read-only endpoints that proxy SELECT * queries to the Supabase PostgreSQL
+# database. Each returns {"data": [rows]} on success or 503 when the
+# Supabase client is not configured (missing SUPABASE_URL / SUPABASE_KEY).
+# These are sync defs — supabase-py is synchronous and FastAPI
+# automatically runs sync handlers in a threadpool.
+
+@app.get("/database/users")
+def get_users():
+    """Return all rows from the Supabase ``users`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("users").select("*").execute()
+    return {"data": response.data}
+
+
+@app.get("/database/portfolios")
+def get_portfolios():
+    """Return all rows from the Supabase ``portfolios`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("portfolios").select("*").execute()
+    return {"data": response.data}
+
+
+@app.get("/database/holdings")
+def get_holdings():
+    """Return all rows from the Supabase ``holdings`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("holdings").select("*").execute()
+    return {"data": response.data}
+
+
+@app.get("/database/transactions")
+def get_transactions():
+    """Return all rows from the Supabase ``transactions`` table."""
+    if supabase_client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured — set SUPABASE_URL and SUPABASE_KEY in .env",
+        )
+    response = supabase_client.table("transactions").select("*").execute()
+    return {"data": response.data}
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
