@@ -1211,19 +1211,24 @@ void write_trades_csv(const std::string& filepath,
  * portfolio, computes trades, and writes results to output_dir.
  */
 int main(int argc, char* argv[]) {
-    // Validate minimum argument count: program name + data_dir + output_dir + at least 1 ticker
-    if (argc < 4) {
-        std::cerr << "Usage: " << argv[0] << " <data_dir> <output_dir> <TICKER1> [TICKER2] ..." << std::endl;
+    // Validate minimum argument count: program name + data_dir + output_dir
+    // + total_capital + investable_capital + at least 1 ticker
+    if (argc < 6) {
+        std::cerr << "Usage: " << argv[0]
+                  << " <data_dir> <output_dir> <total_capital> <investable_capital>"
+                  << " <TICKER1> [TICKER2] ..." << std::endl;
         return 1;
     }
 
     // Parse CLI arguments
     std::string data_dir = argv[1];    // directory containing per-ticker CSV files
     std::string output_dir = argv[2];  // directory for output files (holdings.csv, portfolio.csv)
+    double total_capital = std::stod(argv[3]);       // total fund size (e.g. 100000000.0)
+    double investable_capital = std::stod(argv[4]);  // capital available for stock allocation (e.g. 90% of total)
 
-    // Collect ticker symbols from remaining arguments
+    // Collect ticker symbols from remaining arguments (start at index 5)
     std::vector<std::string> labels;
-    for (int i = 3; i < argc; i++) {
+    for (int i = 5; i < argc; i++) {
         labels.push_back(argv[i]);
     }
 
@@ -1313,15 +1318,13 @@ int main(int argc, char* argv[]) {
         current_prices.push_back(stock.back().current_price);
     }
 
-    // Compute share allocation: floor(w_i * $90,000,000 / price_i) per stock
+    // Compute share allocation: floor(w_i * investable_capital / price_i) per stock
     // Rounding remainders accumulate back into the cash reserve
-    double investable_capital = 90000000.0;
     std::vector<Allocation> allocation = compute_allocation(
         labels, frontier[optimal_idx].weights, current_prices, investable_capital);
     print_allocation(labels, allocation, investable_capital);
 
     // Compare target vs current allocation and compute trades
-    double total_capital = 100000000.0;   // total fund size ($100M)
     double cash_floor_pct = 0.05;        // 5% minimum cash reserve
     double cash_floor = cash_floor_pct * total_capital;  // $5,000,000
 
