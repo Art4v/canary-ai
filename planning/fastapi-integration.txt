@@ -1,100 +1,118 @@
-Serve React Frontend from FastAPI at /dashboard                                                           
-  
- Context
-
- The frontend (React + Vite) and backend (FastAPI) are completely disconnected — the frontend has zero API 
-  calls and runs as a standalone Vite dev server. The goal is to have FastAPI serve the built React app at 
-  GET /dashboard, so the entire app runs from a single server at http://127.0.0.1:8000.
-
- The existing health-check at GET / stays unchanged. No API data-fetching wiring or dock functionality is  
- needed yet.
-
- Files to Modify
-
- ┌──────────────────────────┬──────────────────────────────────────────────────────────┐
- │           File           │                          Change                          │
- ├──────────────────────────┼──────────────────────────────────────────────────────────┤
- │ frontend/vite.config.js  │ Set base: '/dashboard/' so built asset paths are correct │
- ├──────────────────────────┼──────────────────────────────────────────────────────────┤
- │ backend/main.py          │ Add /dashboard route + mount static files                │
- ├──────────────────────────┼──────────────────────────────────────────────────────────┤
- │ backend/requirements.txt │ Add aiofiles (required by Starlette's FileResponse)      │
- └──────────────────────────┴──────────────────────────────────────────────────────────┘
-
- Plan
-
- 1. Update Vite config — frontend/vite.config.js
-
- Add base: '/dashboard/' so the production build references assets at /dashboard/assets/... instead of     
- /assets/...:
-
- export default defineConfig({
-   base: '/dashboard/',
-   plugins: [react()],
-   resolve: {
-     alias: {
-       '@': path.resolve(__dirname, './src'),
-     },
-   },
- })
-
- This only affects npm run build output. npm run dev still works normally.
-
- 2. Add dashboard route and static mount — backend/main.py
-
- Add these imports:
- from fastapi.staticfiles import StaticFiles
- from fastapi.responses import FileResponse
-
- Add the route (before any app.mount calls):
- @app.get("/dashboard")
- async def dashboard():
-     """Serve the React frontend's built index.html."""
-     return FileResponse(
-         path.join("frontend", "dist", "index.html"),
-         media_type="text/html"
-     )
-
- Mount the built static files directory at the end of main.py (mounts must come after route definitions):  
- app.mount("/dashboard", StaticFiles(directory=path.join("frontend", "dist")), name="dashboard-static")    
-
- How this works:
- - GET /dashboard → explicit route wins → serves index.html
- - GET /dashboard/assets/index-abc123.js → mount handles it → serves the JS bundle
- - GET /dashboard/favicon.svg → mount handles it → serves the favicon
- - All existing API routes (/, /track, /news) remain unchanged
-
- 3. Add aiofiles dependency — backend/requirements.txt
-
- Append aiofiles — Starlette's FileResponse requires it for async file serving.
-
- 4. Build the frontend
-
- cd frontend && npm run build
-
- This produces frontend/dist/ with the bundled app. This step must be run before /dashboard will work.     
-
- 5. Update README
-
- - Add aiofiles to the Tech Stack table
- - Document the /dashboard endpoint under Backend features
- - Add a "Serving the frontend" section to Getting Started explaining the build step
- - Update project structure tree to show frontend/dist/ is generated
-
- Important Notes
-
- - Path resolution: main.py uses path.join("frontend", "dist", ...) which resolves relative to CWD. The    
- server must be started from the repo root (python backend/main.py from unihack-hackathon-submission/) or  
- the path adjusted accordingly. Need to verify current startup CWD.
- - Dev workflow unchanged: npm run dev still serves the frontend at :5173 for development. The /dashboard  
- route is for serving the production build only.
- - No CORS needed: Since the frontend is served from the same origin (:8000), no CORS configuration is     
- required for future API calls.
-
- Verification
-
- 1. cd frontend && npm run build — confirm dist/ is created with index.html and assets/
- 2. cd .. && pip install aiofiles && python backend/main.py
- 3. Visit http://127.0.0.1:8000/ — should return {"status": "ok"} (unchanged)
- 4. Visit http://127.0.0.1:8000/dashboard — should render the full React app (sky, birds, cloud dock)      
- 5. Confirm existing endpoints (/track, /news) still work
+Serve React Frontend from FastAPI at /dashboard                                                                                                                                                                         │
+│                                                                                                                                                                                                                         │
+│ Context                                                                                                                                                                                                                 │
+│                                                                                                                                                                                                                         │
+│ The frontend (React + Vite) and backend (FastAPI) are completely disconnected. The goal is to have FastAPI serve the built React app at GET /dashboard, so the entire app runs from a single server at                  │
+│ http://127.0.0.1:8000.                                                                                                                                                                                                  │
+│                                                                                                                                                                                                                         │
+│ Key codebase state that affects this plan:                                                                                                                                                                              │
+│ - React Router is set up with client-side routes (/login, /register, /). FastAPI must serve index.html for all /dashboard/* paths (SPA catch-all) so React Router handles navigation.                                   │
+│ - BrowserRouter in main.jsx currently has no basename — needs basename="/dashboard".                                                                                                                                    │
+│ - Backend CWD is backend/ — python main.py runs from backend/, so paths to frontend/dist/ must use __file__-relative resolution (not CWD).                                                                              │
+│ - Backend has been restructured — database endpoints now use modular routers (routers/users.py, etc.) with app.include_router(), Pydantic schemas (schemas/), dependency injection (dependencies.py), and a             │
+│ standardized response envelope (schemas/response.py).                                                                                                                                                                   │
+│ - The static mount must go after app.include_router() calls and the validation error handler.                                                                                                                           │
+│                                                                                                                                                                                                                         │
+│ Files to Modify                                                                                                                                                                                                         │
+│                                                                                                                                                                                                                         │
+│ ┌──────────────────────────┬─────────────────────────────────────────────────────────────────────────┐                                                                                                                  │
+│ │           File           │                                 Change                                  │                                                                                                                  │
+│ ├──────────────────────────┼─────────────────────────────────────────────────────────────────────────┤                                                                                                                  │
+│ │ frontend/vite.config.js  │ Set base: '/dashboard/' for correct asset paths in prod build           │                                                                                                                  │
+│ ├──────────────────────────┼─────────────────────────────────────────────────────────────────────────┤                                                                                                                  │
+│ │ frontend/src/main.jsx    │ Add basename="/dashboard" to <BrowserRouter>                            │                                                                                                                  │
+│ ├──────────────────────────┼─────────────────────────────────────────────────────────────────────────┤                                                                                                                  │
+│ │ backend/main.py          │ Add /dashboard SPA catch-all route + mount static files                 │                                                                                                                  │
+│ ├──────────────────────────┼─────────────────────────────────────────────────────────────────────────┤                                                                                                                  │
+│ │ backend/requirements.txt │ Add aiofiles (required by Starlette's FileResponse)                     │                                                                                                                  │
+│ ├──────────────────────────┼─────────────────────────────────────────────────────────────────────────┤                                                                                                                  │
+│ │ README.md                │ Document /dashboard endpoint, build step, update tech stack & structure │                                                                                                                  │
+│ └──────────────────────────┴─────────────────────────────────────────────────────────────────────────┘                                                                                                                  │
+│                                                                                                                                                                                                                         │
+│ Plan                                                                                                                                                                                                                    │
+│                                                                                                                                                                                                                         │
+│ Step 1: Update Vite config — frontend/vite.config.js                                                                                                                                                                    │
+│                                                                                                                                                                                                                         │
+│ Add base: '/dashboard/' so the production build references assets at /dashboard/assets/...:                                                                                                                             │
+│                                                                                                                                                                                                                         │
+│ export default defineConfig({                                                                                                                                                                                           │
+│   base: '/dashboard/',                                                                                                                                                                                                  │
+│   plugins: [react()],                                                                                                                                                                                                   │
+│   resolve: { alias: { '@': path.resolve(__dirname, './src') } },                                                                                                                                                        │
+│ })                                                                                                                                                                                                                      │
+│                                                                                                                                                                                                                         │
+│ Only affects npm run build output. npm run dev still works at :5173.                                                                                                                                                    │
+│                                                                                                                                                                                                                         │
+│ Step 2: Add basename to BrowserRouter — frontend/src/main.jsx                                                                                                                                                           │
+│                                                                                                                                                                                                                         │
+│ Change <BrowserRouter> to <BrowserRouter basename="/dashboard">:                                                                                                                                                        │
+│                                                                                                                                                                                                                         │
+│ <BrowserRouter basename="/dashboard">                                                                                                                                                                                   │
+│                                                                                                                                                                                                                         │
+│ React Router's <Link to="/login"> will automatically resolve to /dashboard/login. No changes needed in LoginPage, RegisterPage, or App.jsx route definitions — those stay as /login, /register, /.                      │
+│                                                                                                                                                                                                                         │
+│ Step 3: Add dashboard route + static mount — backend/main.py                                                                                                                                                            │
+│                                                                                                                                                                                                                         │
+│ New imports (add to existing import block):                                                                                                                                                                             │
+│ from fastapi.staticfiles import StaticFiles                                                                                                                                                                             │
+│ from fastapi.responses import FileResponse                                                                                                                                                                              │
+│                                                                                                                                                                                                                         │
+│ Path constant (add near other config constants):                                                                                                                                                                        │
+│ # Absolute path to the built frontend — resolves correctly regardless of CWD                                                                                                                                            │
+│ _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))                                                                                                                                                               │
+│ _FRONTEND_DIST = os.path.join(_BACKEND_DIR, "..", "frontend", "dist")                                                                                                                                                   │
+│                                                                                                                                                                                                                         │
+│ SPA catch-all route (add after the validation error handler, before Lifecycle section):                                                                                                                                 │
+│ @app.get("/dashboard/{full_path:path}")                                                                                                                                                                                 │
+│ @app.get("/dashboard")                                                                                                                                                                                                  │
+│ async def serve_dashboard(full_path: str = ""):                                                                                                                                                                         │
+│     """Serve index.html for all /dashboard/* paths — enables React Router SPA navigation."""                                                                                                                            │
+│     return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"), media_type="text/html")                                                                                                                             │
+│                                                                                                                                                                                                                         │
+│ Static file mount (add at very end of file, after the if __name__ block — or just before it):                                                                                                                           │
+│ # Static mount for built frontend assets (JS, CSS, images).                                                                                                                                                             │
+│ # Must come after all route definitions. FastAPI checks explicit routes                                                                                                                                                 │
+│ # first; the mount only serves files that exist on disk.                                                                                                                                                                │
+│ app.mount("/dashboard", StaticFiles(directory=_FRONTEND_DIST), name="dashboard-static")                                                                                                                                 │
+│                                                                                                                                                                                                                         │
+│ How routing resolves:                                                                                                                                                                                                   │
+│ - GET /dashboard → explicit route → serves index.html                                                                                                                                                                   │
+│ - GET /dashboard/login → catch-all route → serves index.html → React Router renders LoginPage                                                                                                                           │
+│ - GET /dashboard/assets/index-abc.js → static mount → serves the JS bundle                                                                                                                                              │
+│ - All API routes (/, /track/*, /news, /predict, /database/*) unchanged                                                                                                                                                  │
+│                                                                                                                                                                                                                         │
+│ Step 4: Add aiofiles — backend/requirements.txt                                                                                                                                                                         │
+│                                                                                                                                                                                                                         │
+│ Append aiofiles to the dependency list. Required by Starlette's FileResponse for async file serving.                                                                                                                    │
+│                                                                                                                                                                                                                         │
+│ Step 5: Build the frontend                                                                                                                                                                                              │
+│                                                                                                                                                                                                                         │
+│ cd frontend && npm run build                                                                                                                                                                                            │
+│                                                                                                                                                                                                                         │
+│ Step 6: Update README                                                                                                                                                                                                   │
+│                                                                                                                                                                                                                         │
+│ - Add aiofiles to Tech Stack table                                                                                                                                                                                      │
+│ - Document /dashboard endpoint under Backend features (serves the React SPA)                                                                                                                                            │
+│ - Note that React Router routes are at /dashboard/login, /dashboard/register, /dashboard/                                                                                                                               │
+│ - Add "Serving the frontend" note in Getting Started (run npm run build first)                                                                                                                                          │
+│ - Update project structure: add routers/, schemas/, dependencies.py, and note frontend/dist/ as generated                                                                                                               │
+│ - Add router architecture to Backend features (full CRUD for users, portfolios, holdings, transactions via /database/*)                                                                                                 │
+│                                                                                                                                                                                                                         │
+│ Important Notes                                                                                                                                                                                                         │
+│                                                                                                                                                                                                                         │
+│ - __file__-based path resolution — _FRONTEND_DIST is computed from main.py's location, not CWD. Works whether started as python main.py from backend/ or python backend/main.py from repo root.                         │
+│ - Static mount placement — must go after app.include_router() calls and route definitions. FastAPI checks explicit routes first, then falls through to mounts.                                                          │
+│ - No CORS needed — frontend served from same origin (:8000).                                                                                                                                                            │
+│ - Dev URLs change — basename="/dashboard" means dev server also uses /dashboard/login etc. at localhost:5173/dashboard/login.                                                                                           │
+│                                                                                                                                                                                                                         │
+│ Verification                                                                                                                                                                                                            │
+│                                                                                                                                                                                                                         │
+│ 1. cd frontend && npm run build — confirm dist/ created with index.html and assets/                                                                                                                                     │
+│ 2. cd ../backend && pip install aiofiles && python main.py                                                                                                                                                              │
+│ 3. http://127.0.0.1:8000/ → {"status": "ok"} (unchanged)                                                                                                                                                                │
+│ 4. http://127.0.0.1:8000/dashboard → React app renders (sky, birds, dock)                                                                                                                                               │
+│ 5. http://127.0.0.1:8000/dashboard/login → login page renders                                                                                                                                                           │
+│ 6. http://127.0.0.1:8000/dashboard/register → register page renders                                                                                                                                                     │
+│ 7. Footer links navigate correctly between login ↔ register                                                                                                                                                             │
+│ 8. Form submit → redirects to /dashboard/ (dashboard)                                                                                                                                                                   │
+│ 9. API endpoints still work: /track, /news, /predict, /database/users
