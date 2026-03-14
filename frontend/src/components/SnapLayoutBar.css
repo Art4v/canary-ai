@@ -1,0 +1,97 @@
+/* ── SnapLayoutBar ──
+   Fixed toolbar that slides down from the top center of the viewport
+   when dragging a window near the top edge. Shows 6 Windows 11-style
+   layout options as interactive tiles. */
+
+/* ── Container ── */
+.snap-layout-bar {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9998;
+  padding: 10px 14px;
+
+  /* Glassmorphism styling — translucent with blur */
+  background: var(--color-surface);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+
+  /* Allow pointer events so zones can be hovered during drag */
+  pointer-events: auto;
+}
+
+/* ── Layouts row ── */
+.snap-layout-bar__layouts {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ── Individual layout tile ──
+   Each tile is a miniature representation of a layout arrangement.
+   48×34px gives a ~16:9-ish aspect ratio matching typical monitors. */
+.snap-layout-bar__tile {
+  width: 48px;
+  height: 34px;
+  position: relative;
+  border-radius: 6px;
+  background: var(--color-border);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  overflow: hidden;
+}
+
+/* Slight scale-up on hover for visual feedback */
+.snap-layout-bar__tile:hover {
+  transform: scale(1.08);
+}
+
+/* ── Zone block within a tile ──
+   Positioned absolutely using percentage values that match the zone's
+   fractional coordinates. A 1px inset creates visible gaps between zones. */
+.snap-layout-bar__zone {
+  position: absolute;
+  box-sizing: border-box;
+  /* 1px padding creates a tiny visual gap between adjacent zones */
+  padding: 1px;
+}
+
+/* The visible fill of each zone — rendered via ::after so the padding
+   on the parent creates the gap without affecting layout */
+.snap-layout-bar__zone::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: rgba(74, 158, 255, 0.25);
+  transition: background 0.12s ease;
+}
+
+/* Brighten the zone fill on hover to indicate it's selectable */
+.snap-layout-bar__zone:hover::after {
+  background: rgba(74, 158, 255, 0.6);
+}
+
+/* ── Dark mode adjustments ──
+   When .night class is on <body>, tweak backgrounds for contrast */
+.night .snap-layout-bar {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.night .snap-layout-bar__tile {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.night .snap-layout-bar__zone::after {
+  background: rgba(74, 158, 255, 0.3);
+}
+
+.night .snap-layout-bar__zone:hover::after {
+  background: rgba(74, 158, 255, 0.65);
+}
