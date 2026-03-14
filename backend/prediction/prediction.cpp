@@ -43,6 +43,29 @@ struct Allocation {
     double remainder;         // target_dollars - invested (rounding leftover)
 };
 
+/* Represents a stock currently held in the portfolio.
+ * Tracks the number of shares, average price, and last update time.
+ * Used to compare current positions against target allocation. */
+struct Holding {
+    std::string ticker;       // stock symbol
+    int shares;               // current whole shares held
+    double avg_price;         // price at last update (for audit trail)
+    std::string last_updated; // timestamp of last update
+};
+
+/* Represents a single trade action computed by comparing current
+ * holdings against the target allocation from the optimizer.
+ * delta > 0 means buy, delta < 0 means sell, delta == 0 means hold. */
+struct Trade {
+    std::string ticker;      // stock symbol
+    int current_shares;      // shares held before trade
+    int target_shares;       // shares the optimizer wants
+    int delta;               // target - current (+ = buy, - = sell, 0 = hold)
+    double current_price;    // price used for cost calculation
+    double cost;             // delta * current_price (negative for sells)
+    std::string action;      // "BUY", "SELL", or "HOLD"
+};
+
 /* Represents a single row of stock data from a CSV file. */
 struct StockRow {
     std::tm timestamp;       // parsed datetime (timezone offset discarded)
@@ -842,6 +865,343 @@ void print_allocation(const std::vector<std::string>& labels,
 }
 
 /*
+ * load_holdings — reads current portfolio positions from a CSV file.
+ *
+ * If the file doesn't exist (first run), returns a vector of Holding
+ * structs with 0 shares for every ticker. Otherwise parses CSV rows
+ * (header: ticker,shares,avg_price,last_updated) into a map keyed by
+ * ticker, then builds the result vector in label order.
+ *
+ * @param filepath  path to the holdings CSV file
+ * @param labels    stock ticker labels in portfolio order
+ * @return          vector of Holding structs, one per label
+ */
+std::vector<Holding> load_holdings(const std::string& filepath,
+                                   const std::vector<std::string>& labels) {
+    std::vector<Holding> holdings;
+
+    // Build a map from ticker -> parsed holding data
+    std::map<std::string, Holding> holdings_map;
+
+    std::ifstream file(filepath);
+    if (file.is_open()) {
+        std::string line;
+        // Skip header line
+        std::getline(file, line);
+
+        // Parse each row: ticker,shares,avg_price,last_updated
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+
+            std::istringstream ss(line);
+            std::string token;
+            Holding h;
+
+            // field 1: ticker
+            std::getline(ss, h.ticker, ',');
+            // field 2: shares
+            std::getline(ss, token, ',');
+            h.shares = std::stoi(token);
+            // field 3: avg_price
+            std::getline(ss, token, ',');
+            h.avg_price = std::stod(token);
+            // field 4: last_updated
+            std::getline(ss, h.last_updated, ',');
+
+            holdings_map[h.ticker] = h;
+        }
+        file.close();
+    }
+
+    // Build result vector in label order; default to 0 shares if not found
+    for (const auto& label : labels) {
+        if (holdings_map.count(label)) {
+            holdings.push_back(holdings_map[label]);
+        } else {
+            // First run or new stock — initialize with 0 shares
+            Holding h;
+            h.ticker = label;
+            h.shares = 0;
+            h.avg_price = 0.0;
+            h.last_updated = "N/A";
+            holdings.push_back(h);
+        }
+    }
+
+    return holdings;
+}
+
+/*
+ * compute_trades — computes per-stock trade deltas with cash floor enforcement.
+ *
+ * Three-pass approach:
+ *   1. Compute raw deltas: delta = target_shares - current_shares
+ *   2. Execute sells first (delta < 0) — always in full; freed cash is
+ *      added to available_cash
+ *   3. Execute buys (delta > 0) in array order — each buy is checked
+ *      against the cash floor:
+ *        max_spendable = available_cash - cash_floor
+ *        If the full buy fits, execute it; otherwise reduce to
+ *        floor(max_spendable / price) shares. If nothing is affordable,
+ *        force HOLD and print a warning.
+ *
+ * @param labels              stock ticker labels in portfolio order
+ * @param allocation          target allocation from the optimizer
+ * @param holdings            current portfolio positions
+ * @param total_capital       total fund size (e.g. $100,000)
+ * @param floor_pct           minimum cash reserve as a fraction (e.g. 0.05 = 5%)
+ * @param available_cash_out  output: post-trade cash balance after all trades
+ * @return                    vector of Trade structs, one per stock
+ */
+std::vector<Trade> compute_trades(
+    const std::vector<std::string>& labels,
+    const std::vector<Allocation>& allocation,
+    const std::vector<Holding>& holdings,
+    double total_capital,
+    double floor_pct,
+    double& available_cash_out) {
+
+    double cash_floor = floor_pct * total_capital;
+    size_t n = labels.size();
+
+    // Compute available cash = total_capital - current holdings value
+    double available_cash = total_capital;
+    for (size_t i = 0; i < n; ++i) {
+        available_cash -= holdings[i].shares * allocation[i].current_price;
+    }
+
+    // Initialize trades with raw deltas
+    std::vector<Trade> trades(n);
+    for (size_t i = 0; i < n; ++i) {
+        trades[i].ticker = labels[i];
+        trades[i].current_shares = holdings[i].shares;
+        trades[i].target_shares = allocation[i].shares;
+        trades[i].delta = allocation[i].shares - holdings[i].shares;
+        trades[i].current_price = allocation[i].current_price;
+        trades[i].cost = 0.0;
+        trades[i].action = "HOLD";
+    }
+
+    // Pass 1: Execute all sells first (delta < 0) — frees cash for buys.
+    for (size_t i = 0; i < n; ++i) {
+        if (trades[i].delta < 0) {
+            trades[i].action = "SELL";
+            trades[i].cost = trades[i].delta * trades[i].current_price;  // negative cost = proceeds
+            available_cash -= trades[i].cost;  // subtracting negative = adding proceeds
+        }
+    }
+
+    // Pass 2: Execute buys (delta > 0), enforcing cash floor.
+    for (size_t i = 0; i < n; ++i) {
+        if (trades[i].delta > 0) {
+            double trade_value = trades[i].delta * trades[i].current_price;
+
+            double max_spendable = available_cash - cash_floor;
+            double full_cost = trade_value;
+
+            if (full_cost <= max_spendable) {
+                // Full buy fits within cash floor constraint
+                trades[i].action = "BUY";
+                trades[i].cost = full_cost;
+                available_cash -= full_cost;
+            } else if (max_spendable > trades[i].current_price) {
+                // Partial buy — reduce to what we can afford
+                int affordable_shares = (int)std::floor(max_spendable / trades[i].current_price);
+                if (affordable_shares > 0) {
+                    trades[i].action = "BUY";
+                    trades[i].delta = affordable_shares;
+                    trades[i].target_shares = trades[i].current_shares + affordable_shares;
+                    trades[i].cost = affordable_shares * trades[i].current_price;
+                    available_cash -= trades[i].cost;
+                    std::cout << "  WARNING: " << trades[i].ticker
+                              << " buy reduced from " << (allocation[i].shares - holdings[i].shares)
+                              << " to " << affordable_shares
+                              << " shares (cash floor constraint)" << std::endl;
+                } else {
+                    // Can't afford even one share
+                    trades[i].action = "HOLD";
+                    trades[i].delta = 0;
+                    trades[i].target_shares = trades[i].current_shares;
+                    std::cout << "  WARNING: " << trades[i].ticker
+                              << " buy skipped — insufficient cash above floor" << std::endl;
+                }
+            } else {
+                // Can't afford even one share
+                trades[i].action = "HOLD";
+                trades[i].delta = 0;
+                trades[i].target_shares = trades[i].current_shares;
+                std::cout << "  WARNING: " << trades[i].ticker
+                          << " buy skipped — insufficient cash above floor" << std::endl;
+            }
+        }
+    }
+
+    // Export final available cash so callers don't need to recompute
+    available_cash_out = available_cash;
+
+    return trades;
+}
+
+/*
+ * print_trades — prints the trade plan with per-stock details and totals.
+ *
+ * Shows each stock's current holdings, target, delta, action, and cost.
+ * Then prints aggregate buy cost, sell proceeds, post-trade cash balance,
+ * cash floor, and whether the floor constraint is satisfied.
+ *
+ * @param trades          vector of Trade structs (one per stock)
+ * @param available_cash  cash remaining after all trades
+ * @param cash_floor      minimum cash reserve requirement
+ */
+void print_trades(const std::vector<Trade>& trades,
+                  double available_cash, double cash_floor) {
+    std::cout << "=== Trade Plan ===" << std::endl;
+
+    double total_buy_cost = 0.0;
+    double total_sell_proceeds = 0.0;
+
+    for (const auto& t : trades) {
+        // Format delta with explicit sign for clarity
+        std::string delta_str;
+        if (t.delta > 0) delta_str = "+" + std::to_string(t.delta);
+        else if (t.delta < 0) delta_str = std::to_string(t.delta);
+        else delta_str = "0";
+
+        std::cout << "  " << t.ticker << ": "
+                  << "hold=" << t.current_shares
+                  << "  target=" << t.target_shares
+                  << "  delta=" << delta_str
+                  << "  action=" << t.action
+                  << "  cost=$" << std::fixed << std::setprecision(2)
+                  << t.cost << std::endl;
+
+        // Accumulate buy costs and sell proceeds separately
+        if (t.cost > 0) total_buy_cost += t.cost;
+        if (t.cost < 0) total_sell_proceeds += t.cost;  // negative value
+    }
+
+    std::cout << "  ---" << std::endl;
+    std::cout << "  Total Buy Cost:     $" << std::fixed << std::setprecision(2)
+              << total_buy_cost << std::endl;
+    std::cout << "  Total Sell Proceeds: $" << std::fixed << std::setprecision(2)
+              << -total_sell_proceeds << std::endl;
+    std::cout << "  Cash After Trades:  $" << std::fixed << std::setprecision(2)
+              << available_cash << std::endl;
+    std::cout << "  Cash Floor:         $" << std::fixed << std::setprecision(2)
+              << cash_floor << std::endl;
+    std::cout << "  Status: "
+              << (available_cash >= cash_floor ? "OK" : "WARNING — below cash floor!")
+              << std::endl;
+    std::cout << std::endl;
+}
+
+/*
+ * save_holdings — writes updated portfolio positions to a CSV file.
+ *
+ * Overwrites the file with a header row followed by one row per stock.
+ * Each row contains the post-trade share count (current + delta),
+ * the current price, and a timestamp of when the file was written.
+ *
+ * @param filepath  path to the holdings CSV file
+ * @param trades    vector of Trade structs with computed deltas
+ */
+void save_holdings(const std::string& filepath,
+                   const std::vector<Trade>& trades) {
+    std::ofstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "Error: could not write to " << filepath << std::endl;
+        return;
+    }
+
+    // Get current system time for the last_updated field
+    std::time_t now = std::time(nullptr);
+    std::tm now_tm = {};
+#ifdef _WIN32
+    localtime_s(&now_tm, &now);
+#else
+    localtime_r(&now, &now_tm);
+#endif
+    char time_buf[64];
+    std::snprintf(time_buf, sizeof(time_buf), "%04d-%02d-%02d %02d:%02d:%02d",
+                  now_tm.tm_year + 1900, now_tm.tm_mon + 1, now_tm.tm_mday,
+                  now_tm.tm_hour, now_tm.tm_min, now_tm.tm_sec);
+
+    // Write CSV header
+    file << "ticker,shares,avg_price,last_updated" << std::endl;
+
+    // Write one row per stock with updated position
+    for (const auto& t : trades) {
+        int updated_shares = t.current_shares + t.delta;
+        file << t.ticker << ","
+             << updated_shares << ","
+             << std::fixed << std::setprecision(2) << t.current_price << ","
+             << time_buf << std::endl;
+    }
+
+    file.close();
+    std::cout << "Holdings saved to " << filepath << std::endl;
+}
+
+/*
+ * write_trades_csv — writes executed trades (BUY/SELL only) to a CSV file.
+ *
+ * Skips HOLD entries (trades that fell below the threshold) so the output
+ * contains only actionable trades. Appends a CASH_RESERVE summary row
+ * showing the post-trade cash balance.
+ *
+ * CSV columns:
+ *   ticker          — stock symbol (or "CASH_RESERVE" for summary)
+ *   action          — "buy" or "sell" (lowercase), or "summary"
+ *   amount_of_shares — abs(delta) for trades, 0 for summary
+ *   total_change    — dollar value of the trade (negative for sells)
+ *
+ * @param filepath          output file path (e.g. "trades.csv")
+ * @param trades            vector of Trade structs from compute_trades
+ * @param cash_after_trades remaining cash balance after all trades
+ */
+void write_trades_csv(const std::string& filepath,
+                      const std::vector<Trade>& trades,
+                      double cash_after_trades) {
+    std::ofstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "ERROR: Could not open " << filepath << " for writing" << std::endl;
+        return;
+    }
+
+    // CSV header
+    file << "ticker,action,amount_of_shares,total_change" << std::endl;
+
+    // Write one row per stock — action column shows "buy", "sell", or "hold"
+    for (const auto& t : trades) {
+        // Lowercase action for output consistency
+        std::string action_lower;
+        if (t.action == "BUY") action_lower = "buy";
+        else if (t.action == "SELL") action_lower = "sell";
+        else action_lower = "hold";
+
+        // amount_of_shares is always positive (absolute delta)
+        int abs_shares = std::abs(t.delta);
+
+        // total_change: positive for buys, negative for sells
+        double total_change = (t.action == "SELL")
+            ? -(abs_shares * t.current_price)
+            :  (abs_shares * t.current_price);
+
+        file << t.ticker << ","
+             << action_lower << ","
+             << abs_shares << ","
+             << std::fixed << std::setprecision(2) << total_change << std::endl;
+    }
+
+    // Summary row showing remaining cash after all trades
+    file << "CASH_RESERVE,summary,0,"
+         << std::fixed << std::setprecision(2) << cash_after_trades << std::endl;
+
+    file.close();
+    std::cout << "Trades written to " << filepath << std::endl;
+}
+
+/*
  * main — entry point. Loads all three test CSV files, aligns their
  * timestamps to a common index via forward-fill, computes per-minute
  * returns, builds the covariance matrix, generates frontier portfolios,
@@ -917,10 +1277,33 @@ int main() {
 
     // Compute share allocation: floor(w_i * $90,000 / price_i) per stock
     // Rounding remainders accumulate back into the cash reserve
-    double investable_capital = 90000.0;
+    double investable_capital = 90000000.0;
     std::vector<Allocation> allocation = compute_allocation(
         labels, frontier[optimal_idx].weights, current_prices, investable_capital);
     print_allocation(labels, allocation, investable_capital);
+
+    // Step 8: Compare target vs current allocation and compute trades
+    double total_capital = 100000000.0;   // total fund size ($100M)
+    double cash_floor_pct = 0.05;        // 5% minimum cash reserve
+    double cash_floor = cash_floor_pct * total_capital;  // $5,000,000
+
+    // Load current holdings from CSV (0 shares on first run if file absent)
+    std::string holdings_file = "holdings.csv";
+    std::vector<Holding> holdings = load_holdings(holdings_file, labels);
+
+    // Compute trade deltas with 5% cash floor enforcement
+    // Sells execute first to free cash, then buys are checked against floor
+    double available_cash = 0.0;
+    std::vector<Trade> trades = compute_trades(
+        labels, allocation, holdings, total_capital, cash_floor_pct,
+        available_cash);
+
+    // Print trade plan and save updated positions
+    print_trades(trades, available_cash, cash_floor);
+    save_holdings(holdings_file, trades);
+
+    // Write all trades (buy/sell/hold) to trades.csv
+    write_trades_csv("trades.csv", trades, available_cash);
 
     return 0;
 }
