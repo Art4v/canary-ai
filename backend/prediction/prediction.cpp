@@ -15,8 +15,20 @@
 #include <ctime>
 #include <iomanip>
 #include <cstdio>
+#include <cmath>
+#include <random>
 #include <map>
 #include <set>
+
+/* Represents a single portfolio on the efficient frontier.
+ * Stores the weight allocation, expected return, variance, and
+ * standard deviation (risk) for one randomly sampled portfolio. */
+struct Portfolio {
+    std::vector<double> weights;  // weight per stock, sums to 1.0
+    double expected_return;       // w^T * mean_returns
+    double variance;              // w^T * Σ * w
+    double std_dev;               // sqrt(variance) — portfolio risk
+};
 
 /* Represents a single row of stock data from a CSV file. */
 struct StockRow {
@@ -373,9 +385,293 @@ void print_returns_summary(const std::string& label,
 }
 
 /*
+ * compute_mean_returns — computes the arithmetic mean return for each stock.
+ *
+ * Skips index 0 (which is always 0.0, no prior price) and averages
+ * indices 1..N-1, giving the true mean per-minute return.
+ *
+ * @param all_returns  vector of return vectors, one per stock
+ * @return             vector of mean returns, one per stock
+ */
+std::vector<double> compute_mean_returns(
+        const std::vector<std::vector<double>>& all_returns) {
+    std::vector<double> means;
+    for (const auto& returns : all_returns) {
+        double sum = 0.0;
+        // Skip index 0 (always 0.0 — no previous price to compare)
+        for (size_t i = 1; i < returns.size(); ++i) {
+            sum += returns[i];
+        }
+        // N-1 actual returns (indices 1..N-1)
+        double mean = (returns.size() > 1) ? sum / (returns.size() - 1) : 0.0;
+        means.push_back(mean);
+    }
+    return means;
+}
+
+/*
+ * compute_covariance_matrix — builds the NxN sample covariance matrix
+ * from N stocks' return vectors.
+ *
+ * Uses Bessel's correction (divides by n-1) for an unbiased estimate.
+ * Skips index 0 of each return vector (always 0.0).
+ *
+ * The matrix is symmetric: cov(i,j) == cov(j,i). Diagonal entries
+ * are each stock's variance.
+ *
+ * @param all_returns  vector of return vectors (one per stock, all same length)
+ * @param means        pre-computed mean returns (one per stock)
+ * @return             NxN covariance matrix as vector<vector<double>>
+ */
+std::vector<std::vector<double>> compute_covariance_matrix(
+        const std::vector<std::vector<double>>& all_returns,
+        const std::vector<double>& means) {
+    size_t n_stocks = all_returns.size();
+    // Number of actual return observations (skip index 0)
+    size_t n_obs = all_returns[0].size() - 1;
+
+    // Initialize NxN matrix with zeros
+    std::vector<std::vector<double>> cov(n_stocks,
+                                          std::vector<double>(n_stocks, 0.0));
+
+    for (size_t i = 0; i < n_stocks; ++i) {
+        // Only compute upper triangle + diagonal; mirror for lower triangle
+        for (size_t j = i; j < n_stocks; ++j) {
+            double sum = 0.0;
+            // Iterate over actual returns (indices 1..N-1)
+            for (size_t t = 1; t <= n_obs; ++t) {
+                sum += (all_returns[i][t] - means[i]) *
+                       (all_returns[j][t] - means[j]);
+            }
+            // Bessel's correction: divide by n-1
+            double covariance = sum / (n_obs - 1);
+            cov[i][j] = covariance;
+            cov[j][i] = covariance;  // symmetric
+        }
+    }
+
+    return cov;
+}
+
+/*
+ * print_covariance_summary — prints the mean return vector and the
+ * full covariance matrix in a labelled grid.
+ *
+ * @param labels  stock ticker labels (e.g. {"AAPL", "BOBS", "MSFT"})
+ * @param means   mean return per stock
+ * @param cov     NxN covariance matrix
+ */
+void print_covariance_summary(const std::vector<std::string>& labels,
+                               const std::vector<double>& means,
+                               const std::vector<std::vector<double>>& cov) {
+    // Print mean returns
+    std::cout << "=== Mean Returns ===" << std::endl;
+    for (size_t i = 0; i < labels.size(); ++i) {
+        std::cout << "  " << labels[i] << ": " << means[i] << std::endl;
+    }
+    std::cout << std::endl;
+
+    // Print covariance matrix with row/column labels
+    std::cout << "=== Covariance Matrix ===" << std::endl;
+    // Column header row
+    std::cout << "          ";
+    for (const auto& label : labels) {
+        std::cout << std::setw(14) << label;
+    }
+    std::cout << std::endl;
+
+    // Data rows
+    for (size_t i = 0; i < labels.size(); ++i) {
+        std::cout << "  " << std::setw(6) << labels[i];
+        for (size_t j = 0; j < labels.size(); ++j) {
+            std::cout << std::setw(14) << std::scientific
+                      << std::setprecision(6) << cov[i][j];
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+}
+
+/*
+ * generate_random_weights — produces a random weight vector that sums to 1.0.
+ *
+ * Uses the uniform-then-normalize method: draw N uniform(0,1) samples,
+ * then divide each by their sum. All weights are non-negative and sum
+ * to exactly 1.0, satisfying the long-only fully-invested constraint.
+ *
+ * @param n    number of assets (length of weight vector)
+ * @param rng  Mersenne Twister RNG, passed by reference for state continuity
+ * @return     vector of n weights summing to 1.0
+ */
+std::vector<double> generate_random_weights(size_t n, std::mt19937& rng) {
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    std::vector<double> w(n);
+    double sum = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        w[i] = dist(rng);
+        sum += w[i];
+    }
+    // Normalize so weights sum to 1.0
+    for (size_t i = 0; i < n; ++i) {
+        w[i] /= sum;
+    }
+    return w;
+}
+
+/*
+ * compute_portfolio_return — computes the expected return of a portfolio.
+ *
+ * Calculates the dot product w^T * mean_returns, which gives the
+ * weighted average of the individual stock mean returns.
+ *
+ * @param weights       portfolio weight vector (length N)
+ * @param mean_returns  mean return per stock (length N)
+ * @return              portfolio expected return (scalar)
+ */
+double compute_portfolio_return(const std::vector<double>& weights,
+                                const std::vector<double>& mean_returns) {
+    double ret = 0.0;
+    for (size_t i = 0; i < weights.size(); ++i) {
+        ret += weights[i] * mean_returns[i];
+    }
+    return ret;
+}
+
+/*
+ * compute_portfolio_variance — computes the variance of a portfolio.
+ *
+ * Evaluates the quadratic form w^T * Σ * w, where Σ is the covariance
+ * matrix. This captures both individual stock variances and the
+ * diversification benefit from correlations between stocks.
+ *
+ * @param weights     portfolio weight vector (length N)
+ * @param cov_matrix  NxN covariance matrix
+ * @return            portfolio variance (scalar)
+ */
+double compute_portfolio_variance(const std::vector<double>& weights,
+                                  const std::vector<std::vector<double>>& cov_matrix) {
+    double var = 0.0;
+    for (size_t i = 0; i < weights.size(); ++i) {
+        for (size_t j = 0; j < weights.size(); ++j) {
+            var += weights[i] * weights[j] * cov_matrix[i][j];
+        }
+    }
+    return var;
+}
+
+/*
+ * generate_frontier_portfolios — samples random portfolios for the
+ * efficient frontier.
+ *
+ * Generates n_samples random weight combinations, computes each
+ * portfolio's expected return, variance, and standard deviation,
+ * and returns them as a vector of Portfolio structs. Uses a fixed
+ * seed (42) for reproducible results during development.
+ *
+ * @param mean_returns  mean return per stock (length N)
+ * @param cov_matrix    NxN covariance matrix
+ * @param n_samples     number of random portfolios to generate (default 1000)
+ * @return              vector of Portfolio structs with computed metrics
+ */
+std::vector<Portfolio> generate_frontier_portfolios(
+        const std::vector<double>& mean_returns,
+        const std::vector<std::vector<double>>& cov_matrix,
+        int n_samples = 1000) {
+    size_t n_assets = mean_returns.size();
+    // Fixed seed for reproducible results during development
+    std::mt19937 rng(42);
+
+    std::vector<Portfolio> portfolios;
+    portfolios.reserve(n_samples);
+
+    for (int s = 0; s < n_samples; ++s) {
+        Portfolio p;
+        p.weights = generate_random_weights(n_assets, rng);
+        p.expected_return = compute_portfolio_return(p.weights, mean_returns);
+        p.variance = compute_portfolio_variance(p.weights, cov_matrix);
+        p.std_dev = std::sqrt(p.variance);
+        portfolios.push_back(p);
+    }
+
+    return portfolios;
+}
+
+/*
+ * print_frontier_summary — prints statistics about the generated frontier
+ * portfolios.
+ *
+ * Reports total portfolios generated, identifies the minimum-variance
+ * (lowest risk) portfolio and the maximum-return portfolio, and prints
+ * their weight allocations and risk/return metrics.
+ *
+ * @param labels      stock ticker labels (e.g. {"AAPL", "BOBS", "MSFT"})
+ * @param portfolios  vector of generated Portfolio structs
+ */
+void print_frontier_summary(const std::vector<std::string>& labels,
+                            const std::vector<Portfolio>& portfolios) {
+    if (portfolios.empty()) {
+        std::cout << "(no portfolios generated)" << std::endl;
+        return;
+    }
+
+    std::cout << "=== Frontier Summary ===" << std::endl;
+    std::cout << "Portfolios generated: " << portfolios.size() << std::endl;
+    std::cout << std::endl;
+
+    // Find the portfolio with minimum variance (lowest risk)
+    size_t min_var_idx = 0;
+    for (size_t i = 1; i < portfolios.size(); ++i) {
+        if (portfolios[i].variance < portfolios[min_var_idx].variance) {
+            min_var_idx = i;
+        }
+    }
+
+    // Find the portfolio with maximum expected return
+    size_t max_ret_idx = 0;
+    for (size_t i = 1; i < portfolios.size(); ++i) {
+        if (portfolios[i].expected_return > portfolios[max_ret_idx].expected_return) {
+            max_ret_idx = i;
+        }
+    }
+
+    // Print min-variance portfolio details
+    const Portfolio& mv = portfolios[min_var_idx];
+    std::cout << "Min-Variance Portfolio:" << std::endl;
+    std::cout << "  Weights: ";
+    for (size_t i = 0; i < labels.size(); ++i) {
+        std::cout << labels[i] << "=" << std::fixed << std::setprecision(4)
+                  << mv.weights[i];
+        if (i + 1 < labels.size()) std::cout << ", ";
+    }
+    std::cout << std::endl;
+    std::cout << "  Expected Return: " << std::scientific << std::setprecision(6)
+              << mv.expected_return << std::endl;
+    std::cout << "  Std Dev (Risk):  " << std::scientific << std::setprecision(6)
+              << mv.std_dev << std::endl;
+    std::cout << std::endl;
+
+    // Print max-return portfolio details
+    const Portfolio& mr = portfolios[max_ret_idx];
+    std::cout << "Max-Return Portfolio:" << std::endl;
+    std::cout << "  Weights: ";
+    for (size_t i = 0; i < labels.size(); ++i) {
+        std::cout << labels[i] << "=" << std::fixed << std::setprecision(4)
+                  << mr.weights[i];
+        if (i + 1 < labels.size()) std::cout << ", ";
+    }
+    std::cout << std::endl;
+    std::cout << "  Expected Return: " << std::scientific << std::setprecision(6)
+              << mr.expected_return << std::endl;
+    std::cout << "  Std Dev (Risk):  " << std::scientific << std::setprecision(6)
+              << mr.std_dev << std::endl;
+    std::cout << std::endl;
+}
+
+/*
  * main — entry point. Loads all three test CSV files, aligns their
  * timestamps to a common index via forward-fill, computes per-minute
- * returns, and prints summaries.
+ * returns, builds the covariance matrix, generates frontier portfolios,
+ * and prints summaries.
  */
 int main() {
     // paths are relative to the prediction/ directory
@@ -406,6 +702,27 @@ int main() {
     print_returns_summary("BOBS", bobs_returns);
     print_returns_summary("MSFT", msft_returns);
     std::cout << std::endl;
+
+    // Bundle return vectors for matrix computation
+    std::vector<std::vector<double>> all_returns = {
+        aapl_returns, bobs_returns, msft_returns
+    };
+
+    // Compute mean return per stock (skip index 0 which is always 0.0)
+    std::vector<double> mean_returns = compute_mean_returns(all_returns);
+
+    // Build 3x3 sample covariance matrix with Bessel's correction
+    std::vector<std::vector<double>> cov_matrix =
+        compute_covariance_matrix(all_returns, mean_returns);
+
+    print_covariance_summary(labels, mean_returns, cov_matrix);
+
+    // Generate ~1000 random portfolios on the efficient frontier.
+    // Each portfolio has random long-only weights summing to 1.0,
+    // with computed expected return and risk (std dev).
+    std::vector<Portfolio> frontier =
+        generate_frontier_portfolios(mean_returns, cov_matrix, 1000);
+    print_frontier_summary(labels, frontier);
 
     std::cout << "=== Stock Data Summary ===" << std::endl << std::endl;
 

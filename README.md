@@ -34,6 +34,7 @@ A hackathon project built for UNIHACK 2026.
   - Sorts data chronologically for time-series analysis
   - **Timestamp alignment** — aligns all stocks to a common timestamp index using forward-fill, handling gaps from low-liquidity trading (e.g. BOBS has fewer rows than AAPL/MSFT)
   - **Per-minute returns** — computes simple returns `r_t = (price_t - price_{t-1}) / price_{t-1}` for each aligned stock series; return vectors are same-length as input (index 0 = 0.0) to stay aligned with timestamps
+  - **Covariance matrix** — computes mean returns and a 3×3 sample covariance matrix (with Bessel's correction) from the per-minute return vectors; exploits matrix symmetry and prints a labelled grid for verification
   - Build: `cd backend/prediction && g++ -std=c++17 -o prediction prediction.cpp`
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
