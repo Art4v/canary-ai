@@ -1219,7 +1219,7 @@ int main(int argc, char* argv[]) {
 
     // Parse CLI arguments
     std::string data_dir = argv[1];    // directory containing per-ticker CSV files
-    std::string output_dir = argv[2];  // directory for output files (holdings.csv, portfolio.csv)
+    std::string output_dir = argv[2];  // directory for output files (portfolio.csv, trades.csv)
 
     // Collect ticker symbols from remaining arguments
     std::vector<std::string> labels;
@@ -1327,7 +1327,7 @@ int main(int argc, char* argv[]) {
 
     // Load current holdings from CSV (0 shares on first run if file absent)
     // Holdings file lives in the output directory
-    std::string holdings_file = output_dir + "/holdings.csv";
+    std::string holdings_file = output_dir + "/portfolio.csv";
     std::vector<Holding> holdings = load_holdings(holdings_file, labels);
 
     // Compute trade deltas with 5% cash floor enforcement
@@ -1341,8 +1341,8 @@ int main(int argc, char* argv[]) {
     print_trades(trades, available_cash, cash_floor);
     save_holdings(holdings_file, trades);
 
-    // Write all trades (buy/sell/hold) to portfolio.csv in the output directory
-    write_trades_csv(output_dir + "/portfolio.csv", trades, available_cash);
+    // Write all trades (buy/sell/hold) to trades.csv in the output directory
+    write_trades_csv(output_dir + "/trades.csv", trades, available_cash);
 
     return 0;
 }
