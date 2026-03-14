@@ -318,8 +318,64 @@ void print_alignment_summary(const std::vector<std::string>& labels,
 }
 
 /*
+ * compute_returns — calculates per-minute simple returns from an aligned
+ * stock series.
+ *
+ * For each consecutive pair of rows, computes:
+ *   r_t = (current_price_t - current_price_{t-1}) / current_price_{t-1}
+ *
+ * The first element is always 0.0 (no prior price to compare against),
+ * so the returned vector has the same length as the input — keeping
+ * indices aligned with the stock rows and timestamps.
+ *
+ * @param rows  aligned stock data (must have at least 1 row)
+ * @return      vector of per-minute returns, same length as rows
+ */
+std::vector<double> compute_returns(const std::vector<StockRow>& rows) {
+    std::vector<double> returns(rows.size(), 0.0);
+    // Start at index 1; index 0 stays 0.0 (no previous price)
+    for (size_t t = 1; t < rows.size(); ++t) {
+        double prev = rows[t - 1].current_price;
+        // Guard against division by zero (shouldn't happen with real
+        // price data, but protects against malformed CSVs)
+        if (prev != 0.0) {
+            returns[t] = (rows[t].current_price - prev) / prev;
+        }
+    }
+    return returns;
+}
+
+/*
+ * print_returns_summary — prints basic statistics for a returns vector.
+ *
+ * Shows the ticker label, total return count, and min/max values
+ * for quick verification.
+ *
+ * @param label    stock ticker label (e.g. "AAPL")
+ * @param returns  the per-minute returns vector
+ */
+void print_returns_summary(const std::string& label,
+                           const std::vector<double>& returns) {
+    if (returns.empty()) return;
+
+    // Find min and max returns (skip index 0 which is always 0.0)
+    double min_ret = returns[1];
+    double max_ret = returns[1];
+    for (size_t i = 2; i < returns.size(); ++i) {
+        if (returns[i] < min_ret) min_ret = returns[i];
+        if (returns[i] > max_ret) max_ret = returns[i];
+    }
+
+    std::cout << "  " << label << ": "
+              << returns.size() - 1 << " returns, "
+              << "min=" << min_ret << ", max=" << max_ret
+              << std::endl;
+}
+
+/*
  * main — entry point. Loads all three test CSV files, aligns their
- * timestamps to a common index via forward-fill, and prints summaries.
+ * timestamps to a common index via forward-fill, computes per-minute
+ * returns, and prints summaries.
  */
 int main() {
     // paths are relative to the prediction/ directory
@@ -337,6 +393,19 @@ int main() {
     std::vector<std::string> labels = {"AAPL", "BOBS", "MSFT"};
     std::vector<size_t> aligned_sizes = {aapl.size(), bobs.size(), msft.size()};
     print_alignment_summary(labels, original_sizes, aligned_sizes);
+
+    // Compute per-minute returns for each aligned stock series.
+    // r_t = (price_t - price_{t-1}) / price_{t-1}
+    // First element is 0.0 (no prior price), so vectors stay index-aligned.
+    std::vector<double> aapl_returns = compute_returns(aapl);
+    std::vector<double> bobs_returns = compute_returns(bobs);
+    std::vector<double> msft_returns = compute_returns(msft);
+
+    std::cout << "=== Returns Summary ===" << std::endl;
+    print_returns_summary("AAPL", aapl_returns);
+    print_returns_summary("BOBS", bobs_returns);
+    print_returns_summary("MSFT", msft_returns);
+    std::cout << std::endl;
 
     std::cout << "=== Stock Data Summary ===" << std::endl << std::endl;
 
