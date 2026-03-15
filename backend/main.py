@@ -21,6 +21,18 @@ import os
 import shutil
 import requests
 from dotenv import load_dotenv
+import anthropic
+
+# News-prediction helpers — sentiment overlay that adjusts the C++ trade plan.
+from news_prediction.news_prediction import (
+    load_news_csv,
+    load_portfolio_csv,
+    load_holdings_csv,
+    build_prompt,
+    call_claude,
+    validate_response,
+    write_portfolio_csv,
+)
 
 # Supabase client singleton — used directly (outside FastAPI Depends) by
 # the prediction loop to sync portfolio state with the database.
@@ -98,6 +110,13 @@ stock_tasks: dict[str, asyncio.Task] = {}
 news_task: asyncio.Task | None = None
 
 prediction_task: asyncio.Task | None = None
+
+# Background task for the news-sentiment prediction loop (mirrors prediction_task).
+news_prediction_task: asyncio.Task | None = None
+
+# Tracks the last modification time of news.csv so the news prediction
+# loop can skip Claude calls when news hasn't changed since last cycle.
+_last_news_csv_mtime: float = 0.0
 
 # Tracks Finnhub article IDs already persisted so duplicate articles
 # across polling cycles are never written twice.
@@ -228,10 +247,16 @@ def write_holdings_csv_from_db(supabase, portfolio_id: str) -> None:
             ])
 
 
-def apply_portfolio_csv_to_db(supabase, portfolio_id: str) -> None:
+def apply_portfolio_csv_to_db(supabase, portfolio_id: str, csv_path: str | None = None) -> None:
     """
-    Read ``trades/portfolio.csv`` (written by the C++ binary) and sync
-    the results back into Supabase.
+    Read a portfolio CSV and sync the results back into Supabase.
+
+    Parameters
+    ----------
+    csv_path : str | None
+        Path to the CSV file.  Defaults to ``trades/portfolio.csv``
+        when None, which preserves existing C++ loop behaviour.  The
+        news prediction loop passes ``trades/news_portfolio.csv``.
 
     For each row in the CSV:
       - **buy**  — upsert holding (insert or update qty + weighted avg
@@ -249,7 +274,9 @@ def apply_portfolio_csv_to_db(supabase, portfolio_id: str) -> None:
     portfolio_id : str
         Portfolio UUID to update.
     """
-    csv_path = os.path.join(PREDICTIONS_DIR, "portfolio.csv")
+    # Default to the C++ output if no explicit path was given.
+    if csv_path is None:
+        csv_path = os.path.join(PREDICTIONS_DIR, "portfolio.csv")
 
     # Guard: skip if C++ didn't produce the file or it's empty.
     if not os.path.isfile(csv_path) or os.path.getsize(csv_path) == 0:
@@ -718,6 +745,206 @@ async def _run_prediction_loop() -> None:
         print("[Prediction] Loop cancelled — stopping.", flush=True)
 
 
+# ── News-sentiment prediction loop ──────────────────────────────────────────
+
+async def _run_news_prediction_loop() -> None:
+    """
+    Background task that re-runs the Claude-based news-sentiment overlay
+    every POLL_INTERVAL_SECONDS.
+
+    Mirrors ``_run_prediction_loop()`` structure:
+      - Initial wait of POLL_INTERVAL_SECONDS so news/stock data is ready.
+      - Each cycle checks whether news.csv has changed since the last run;
+        skips the (expensive) Claude call when news hasn't changed.
+      - On success, writes trades/news_portfolio.csv and syncs results to
+        Supabase via ``apply_portfolio_csv_to_db()``.
+      - Runs until cancelled by DELETE /news/predict or server shutdown.
+    """
+    global _last_news_csv_mtime
+
+    # Give tracking loops a head-start so CSVs exist.
+    await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    try:
+        while True:
+            print("[News Prediction] Cycle starting...", flush=True)
+
+            # ── Guard: news tracking must be active ──────────────────
+            if news_task is None:
+                print(
+                    "[News Prediction] WARNING: news tracking is not active — "
+                    "skipping cycle. POST /news first.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Guard: at least one ticker must be tracked ───────────
+            tickers = list(stock_tasks.keys())
+            if not tickers:
+                print(
+                    "[News Prediction] WARNING: no tickers tracked — "
+                    "skipping cycle.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Guard: portfolio.csv must exist ──────────────────────
+            portfolio_csv_path = os.path.join(PREDICTIONS_DIR, "portfolio.csv")
+            if not os.path.isfile(portfolio_csv_path):
+                print(
+                    "[News Prediction] WARNING: trades/portfolio.csv not found — "
+                    "waiting for C++ predictor to run first.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Guard: Anthropic API key ─────────────────────────────
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            if not api_key:
+                print(
+                    "[News Prediction] WARNING: ANTHROPIC_API_KEY not set — "
+                    "skipping cycle.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── News change detection ────────────────────────────────
+            news_csv_path = os.path.join(NEWS_DIR, "news.csv")
+            try:
+                current_mtime = os.path.getmtime(news_csv_path)
+            except OSError:
+                print(
+                    "[News Prediction] WARNING: news.csv not found — "
+                    "skipping cycle.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            if current_mtime == _last_news_csv_mtime:
+                print(
+                    "[News Prediction] No new news since last cycle — skipping Claude call.",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Fetch portfolio state from Supabase ──────────────────
+            total_capital = 100000000.0  # fallback default
+            portfolio_id = None
+            try:
+                supabase = get_supabase_client_direct()
+                portfolio_state = fetch_portfolio_state(supabase)
+                portfolio_id = portfolio_state["portfolio_id"]
+                total_capital = portfolio_state["total_capital"]
+                write_holdings_csv_from_db(supabase, portfolio_id)
+                print(
+                    f"[News Prediction] DB sync: total_capital={total_capital:.2f}",
+                    flush=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[News Prediction] WARNING: could not fetch portfolio state "
+                    f"from Supabase ({exc}) — using fallback capital",
+                    flush=True,
+                )
+
+            # ── Load CSVs ────────────────────────────────────────────
+            holdings_csv_path = os.path.join(PREDICTIONS_DIR, "holdings.csv")
+            output_csv_path = os.path.join(PREDICTIONS_DIR, "news_portfolio.csv")
+
+            try:
+                news_data = load_news_csv(news_csv_path)
+                portfolio_data = load_portfolio_csv(portfolio_csv_path)
+                holdings_data = load_holdings_csv(holdings_csv_path)
+            except Exception as exc:
+                print(
+                    f"[News Prediction] ERROR loading CSVs: {exc}",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Build prompt and call Claude ─────────────────────────
+            prompt = build_prompt(
+                portfolio=portfolio_data,
+                holdings=holdings_data,
+                news=news_data,
+                total_capital=total_capital,
+                tickers=tickers,
+            )
+
+            client = anthropic.Anthropic(api_key=api_key)
+            loop = asyncio.get_running_loop()
+
+            try:
+                result = await loop.run_in_executor(
+                    None, lambda: call_claude(prompt, client)
+                )
+            except ValueError as exc:
+                print(
+                    f"[News Prediction] ERROR: Claude returned invalid JSON: {exc}",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Validate response ────────────────────────────────────
+            try:
+                validate_response(result, total_capital)
+            except ValueError as exc:
+                print(
+                    f"[News Prediction] ERROR: validation failed: {exc}",
+                    flush=True,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            # ── Write adjusted trade plan ────────────────────────────
+            write_portfolio_csv(result["trades"], output_csv_path)
+            print(
+                f"[News Prediction] Wrote adjusted trade plan → {output_csv_path}",
+                flush=True,
+            )
+
+            # ── Sync to Supabase ─────────────────────────────────────
+            if portfolio_id is not None:
+                try:
+                    apply_portfolio_csv_to_db(
+                        supabase, portfolio_id, csv_path=output_csv_path
+                    )
+                    print(
+                        "[News Prediction] DB sync: news_portfolio.csv applied to Supabase",
+                        flush=True,
+                    )
+                except Exception as db_exc:
+                    print(
+                        f"[News Prediction] WARNING: failed to sync to Supabase: {db_exc}",
+                        flush=True,
+                    )
+
+            # ── Update mtime tracker and print rationale ─────────────
+            _last_news_csv_mtime = current_mtime
+            print(
+                f"[News Prediction] Rationale: {result.get('rationale', '(none)')}",
+                flush=True,
+            )
+            print(
+                f"[News Prediction] Cycle complete — "
+                f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                flush=True,
+            )
+
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+    except asyncio.CancelledError:
+        print("[News Prediction] Loop cancelled — stopping.", flush=True)
+
+
 # ── Stock endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -961,6 +1188,59 @@ def prediction_status():
     }
 
 
+# ── News-sentiment prediction endpoints ───────────────────────────────────────
+
+@app.post("/news/predict")
+async def start_news_prediction():
+    """
+    Start the recurring news-sentiment prediction loop.
+
+    Launches a background task that calls Claude every POLL_INTERVAL_SECONDS
+    to adjust the C++ trade plan based on Finnhub news sentiment.  Skips
+    the Claude call when news.csv hasn't changed since the last cycle.
+
+    Returns 409 if the loop is already running.
+    """
+    global news_prediction_task
+
+    if news_prediction_task is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="News prediction loop is already running. DELETE /news/predict to stop it first.",
+        )
+
+    news_prediction_task = asyncio.create_task(_run_news_prediction_loop())
+
+    return {
+        "message": (
+            f"News prediction loop started. "
+            f"First run in ~{POLL_INTERVAL_SECONDS}s once data is ready. "
+            f"Output will be written to {PREDICTIONS_DIR}/news_portfolio.csv"
+        )
+    }
+
+
+@app.delete("/news/predict")
+async def stop_news_prediction():
+    """
+    Stop the recurring news-sentiment prediction loop.
+
+    Returns 404 if the loop is not currently running.
+    """
+    global news_prediction_task
+
+    if news_prediction_task is None:
+        raise HTTPException(
+            status_code=404,
+            detail="News prediction loop is not running. POST /news/predict to start it.",
+        )
+
+    news_prediction_task.cancel()
+    news_prediction_task = None
+
+    return {"message": "News prediction loop stopped."}
+
+
 # ── Database routers ──────────────────────────────────────────────────────────────
 # Full CRUD for users, portfolios, holdings, and transactions tables.
 # Each router lives in routers/ and uses Depends(get_supabase_client)
@@ -1029,8 +1309,8 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cancel every running background task (stock + news + prediction) on shutdown."""
-    global news_task, prediction_task
+    """Cancel every running background task (stock + news + prediction + news prediction) on shutdown."""
+    global news_task, prediction_task, news_prediction_task
 
     all_tasks = list(stock_tasks.values())
 
@@ -1046,6 +1326,11 @@ async def shutdown_event():
         prediction_task.cancel()
         all_tasks.append(prediction_task)
         prediction_task = None
+
+    if news_prediction_task is not None:
+        news_prediction_task.cancel()
+        all_tasks.append(news_prediction_task)
+        news_prediction_task = None
 
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)

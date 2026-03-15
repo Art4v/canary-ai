@@ -18,6 +18,7 @@ A hackathon project built for UNIHACK 2026.
 | Async IO | aiofiles                    |
 | Auth     | bcrypt (server-side hashing)|
 | Chatbot  | Anthropic SDK (Claude)      |
+| News AI  | Anthropic SDK (Claude opus-4-6) |
 
 ## Features
 
@@ -104,6 +105,20 @@ A hackathon project built for UNIHACK 2026.
   - Commands: `quit`/`exit` exits, Ctrl+C exits cleanly
   - API key loaded from the shared `backend/.env` file (not committed); add `ANTHROPIC_API_KEY=your_key` to `backend/.env`
   - Run: `cd backend/chatbot && python advisor.py`
+- **News-sentiment trade overlay** (`backend/news_prediction/news_prediction.py`) — Python script that adjusts the C++ quant optimizer's trade plan based on Finnhub news sentiment via Claude (claude-opus-4-6)
+  - Loads a Finnhub news CSV, the existing `portfolio.csv` (C++ output), and `holdings.csv`
+  - Constructs a prompt instructing Claude to act as a portfolio risk manager reviewing the quant-optimized trades against recent news
+  - Claude may hold, reduce, or reverse any position if news sentiment warrants it; enforces a 5 % cash floor rule
+  - Parses and validates Claude's JSON response (retries once on malformed JSON); writes adjusted trades to `news_portfolio.csv` and updates `holdings.csv`
+  - CLI: `python news_prediction.py --news news.csv --portfolio portfolio.csv --holdings holdings.csv --output news_portfolio.csv --total-capital 100000 --tickers AAPL MSFT`
+  - `--dry-run` flag prints the prompt without calling Claude
+  - API key loaded from `backend/.env` via python-dotenv
+- **News-sentiment prediction loop** — recurring background loop that calls Claude every 60s to adjust the C++ trade plan based on Finnhub news sentiment; skips the Claude call when `news.csv` hasn't changed since the last cycle to avoid redundant API usage
+  - `POST /news/predict` — start the news prediction loop (409 if already running)
+  - `DELETE /news/predict` — stop the news prediction loop (404 if not running)
+  - Each cycle: fetches portfolio state from Supabase, loads news/portfolio/holdings CSVs, builds a prompt, calls Claude, validates the response, writes `trades/news_portfolio.csv`, and syncs results back to Supabase (holdings upserted, transactions logged, cash reserve updated)
+  - Guards per cycle: news tracking must be active, at least one ticker tracked, `trades/portfolio.csv` must exist, `ANTHROPIC_API_KEY` must be set
+  - **Relaxed cash floor** — Claude's response is accepted when CASH_RESERVE is between 4–5% of total capital (soft warning); hard rejection only below 4%
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -168,6 +183,9 @@ unihack-hackathon-submission/
 │   │   ├── advisor.py             # Terminal chatbot — collects 4 investment preferences via casual conversation
 │   │   ├── preferences.json       # Saved preferences (auto-generated after user confirmation)
 │   │   └── memory.md              # Persistent session memory log (auto-generated)
+│   ├── news_prediction/           # News-sentiment trade overlay
+│   │   ├── __init__.py            # Package init (makes module importable)
+│   │   └── news_prediction.py     # CLI script + importable helpers — adjusts quant trades via Claude API
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── dependencies.py          # Supabase client init + FastAPI Depends
