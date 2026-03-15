@@ -13,7 +13,7 @@ import App from './App.jsx'
    use navigation, and outside ThemeProvider since auth is independent. */
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter basename="/dashboard">
+    <BrowserRouter basename="/landing">
       <AuthProvider>
         <ThemeProvider>
           <App />

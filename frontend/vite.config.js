@@ -3,10 +3,10 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // https://vite.dev/config/
-// base: '/dashboard/' ensures production builds reference assets at /dashboard/assets/...
+// base: '/landing/' ensures production builds reference assets at /landing/assets/...
 // so FastAPI can serve them correctly. Does not affect `npm run dev`.
 export default defineConfig({
-  base: '/dashboard/',
+  base: '/landing/',
   plugins: [react()],
   resolve: {
     alias: {
