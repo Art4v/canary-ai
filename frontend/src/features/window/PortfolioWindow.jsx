@@ -25,8 +25,8 @@ import './PortfolioWindow.css'
  * @returns {JSX.Element}
  */
 export default function PortfolioWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
-  /* ── Auth context — get the logged-in user's username ── */
-  const { user } = useAuth()
+  /* ── Auth context — get the logged-in user's username and authFetch ── */
+  const { user, authFetch } = useAuth()
 
   /* ── State ── */
   const [portfolio, setPortfolio] = useState(null)       // portfolio summary row
@@ -52,10 +52,11 @@ export default function PortfolioWindow({ windowId, onClose, onFocus, zIndex, in
         setLoading(true)
         setError(null)
 
-        /* Fetch portfolio summary, holdings, and tracked tickers in parallel */
+        /* Fetch portfolio summary, holdings, and tracked tickers in parallel.
+           Portfolio and holdings are authenticated; /track is public. */
         const [portfolioRes, holdingsRes, trackedRes] = await Promise.all([
-          fetch(`/database/portfolios/${user.username}`),
-          fetch(`/database/holdings/${user.username}`),
+          authFetch(`/database/portfolios/${user.username}`),
+          authFetch(`/database/holdings/${user.username}`),
           fetch('/track'),
         ])
 

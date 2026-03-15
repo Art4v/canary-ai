@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from supabase import Client
 
-from dependencies import get_supabase_client
+from dependencies import get_supabase_client, get_current_user
 from schemas.response import success_response, error_response
 from schemas.portfolios import PortfolioCreate, PortfolioUpdate, PortfolioCashAction
 from crud import portfolios as crud_portfolios
@@ -27,8 +27,12 @@ def list_portfolios(db: Client = Depends(get_supabase_client)):
 
 
 @router.get("/{username}")
-def get_portfolio(username: str, db: Client = Depends(get_supabase_client)):
-    """Return the portfolio belonging to *username*."""
+def get_portfolio(
+    username: str,
+    db: Client = Depends(get_supabase_client),
+    _user: dict = Depends(get_current_user),
+):
+    """Return the portfolio belonging to *username*. Requires auth."""
     data, err = crud_portfolios.get_by_username(db, username)
     if err:
         return JSONResponse(status_code=404, content=error_response(err))
@@ -64,9 +68,14 @@ def update_portfolio(username: str, body: PortfolioUpdate, db: Client = Depends(
 
 
 @router.post("/{username}/deposit")
-def deposit_cash(username: str, body: PortfolioCashAction, db: Client = Depends(get_supabase_client)):
+def deposit_cash(
+    username: str,
+    body: PortfolioCashAction,
+    db: Client = Depends(get_supabase_client),
+    _user: dict = Depends(get_current_user),
+):
     """
-    Deposit cash into the portfolio belonging to *username*.
+    Deposit cash into the portfolio belonging to *username*. Requires auth.
 
     Increases cash_reserve and current_portfolio_value by the given amount.
     """
@@ -77,9 +86,14 @@ def deposit_cash(username: str, body: PortfolioCashAction, db: Client = Depends(
 
 
 @router.post("/{username}/withdraw")
-def withdraw_cash(username: str, body: PortfolioCashAction, db: Client = Depends(get_supabase_client)):
+def withdraw_cash(
+    username: str,
+    body: PortfolioCashAction,
+    db: Client = Depends(get_supabase_client),
+    _user: dict = Depends(get_current_user),
+):
     """
-    Withdraw cash from the portfolio belonging to *username*.
+    Withdraw cash from the portfolio belonging to *username*. Requires auth.
 
     Decreases cash_reserve and current_portfolio_value by the given amount.
     Returns 400 if the amount exceeds the available cash reserve.

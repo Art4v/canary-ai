@@ -21,8 +21,8 @@ import './TradesWindow.css'
  * @returns {JSX.Element}
  */
 export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
-  /* ── Auth context — get the logged-in user's username ── */
-  const { user } = useAuth()
+  /* ── Auth context — get the logged-in user's username and authFetch ── */
+  const { user, authFetch } = useAuth()
 
   /* ── State ── */
   const [portfolio, setPortfolio] = useState(null)         // portfolio summary row
@@ -48,10 +48,10 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
         setLoading(true)
         setError(null)
 
-        /* Parallel fetch: portfolio summary + transaction history */
+        /* Parallel fetch: portfolio summary + transaction history (authenticated) */
         const [portfolioRes, txRes] = await Promise.all([
-          fetch(`/database/portfolios/${user.username}`),
-          fetch(`/database/transactions/${user.username}`),
+          authFetch(`/database/portfolios/${user.username}`),
+          authFetch(`/database/transactions/${user.username}`),
         ])
 
         /* Parse portfolio summary */
@@ -91,7 +91,7 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
     setActionError(null)
 
     try {
-      const res = await fetch(`/database/portfolios/${user.username}/deposit`, {
+      const res = await authFetch(`/database/portfolios/${user.username}/deposit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: numAmount }),
@@ -127,7 +127,7 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
     setActionError(null)
 
     try {
-      const res = await fetch(`/database/portfolios/${user.username}/withdraw`, {
+      const res = await authFetch(`/database/portfolios/${user.username}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: numAmount }),
