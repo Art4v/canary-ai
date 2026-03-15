@@ -83,7 +83,11 @@ A hackathon project built for UNIHACK 2026.
     - `POST /database/transactions` — create a transaction (`{"username", "ticker", "tx_type", "quantity", "price_per_unit", "total_amount"}`)
     - `PUT /database/transactions/{username}` — update transaction fields
     - `DELETE /database/transactions/{username}` — delete all transactions for a user
-- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture
+- **Chat API** (`/chat`) — exposes the chatbot advisor as a REST API for the frontend ChatWindow; per-user session state is stored in memory, while preferences and memory are persisted to the Supabase `users` table (`memory` text column and `preferences` JSONB column)
+  - `POST /chat` — send a message (`{"message", "username"}`) and receive `{"reply", "preferences_updated", "memory_entry", "state"}`; runs the full state machine (extraction, stock discussion/confirmation, field validation) per message
+  - `POST /chat/reset` — clear the server-side session for a user (`{"username"}`); does not clear persisted DB memory/preferences
+- **API key hashing** — when a user saves an API key via `PUT /database/users/{username}`, the backend hashes it with bcrypt before storing (same pattern as passwords); the frontend sends plaintext, the backend handles hashing
+- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture; available both as a standalone terminal app and via the `/chat` REST API
   - **State machine** with 4 states: `COLLECTING` (gathering base fields), `DISCUSSING_STOCK` (brief back-and-forth about a specific ticker), `CONFIRMING_STOCK` (yes/no commit decision), `ADVISING` (all fields set, open conversation)
   - Collects: `stocks_to_keep` (ticker list), `cash_reserve` (dollar amount), `trading_style` (risk-aggressive / balanced / risk-averse), `stock_preferences` (themes/sectors list)
   - Separate Claude API call extracts and validates fields from each user message; resolves company names to tickers (Apple → AAPL), normalizes cash amounts ($10k → 10000)
@@ -121,7 +125,7 @@ A hackathon project built for UNIHACK 2026.
 - **Lego-style window snapping** — drag a window near another's edge and a semi-transparent ghost rectangle preview appears at ~30px proximity showing exactly where the window will land; release while the preview is visible to snap with a GSAP animation (snap-on-release); snapped windows move as a group when dragged; resize a shared edge and the bonded window resizes in sync; double-click a seam to unmerge with a playful bounce animation; supports N-window chaining across all 4 edges
 - **Cloud-shaped navigation dock** — large (~750×300px) cloud dock positioned just below center of the viewport, built with inline SVG ellipses (no drop shadow); contains the Canary logo with a GSAP bobbing animation, a "Canary AI" branding label, and 5 cartoony, puffy nav buttons (Chat, Trades, Portfolio, Settings, Help) styled as rounded squares with a 3D embossed effect (darker border, lighter fill, bottom shadow) and text labels; cloud fill uses `var(--color-cloud)` so it adapts to day/night mode automatically
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
-- **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
+- **ChatWindow** — purple-themed AI chat interface wired to the backend `POST /chat` endpoint; shows a greeting on mount, sends messages with the logged-in username, displays a typing indicator while waiting for the response, and renders preference-update system messages (`[✓ field: value]`) inline; the "+" button clears the session via `POST /chat/reset`; speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
 - **Corner Launchers** — two expandable quick-access menus in the bottom-left and bottom-right corners of the viewport; each features a 48px puffy trigger button (`+` icon that rotates to `×` on expand), 5 section-colored toggle buttons matching the Dock's navigation, and a "Clear All" action to close every open window; menu items animate in with staggered GSAP scale+fade, open windows show an outline ring, and both launchers work independently
 - **Draggable & resizable window system** — generic `Window` shell component in `features/window/` with `useDrag` and `useResize` hooks; supports 8-direction resize handles, viewport-clamped dragging via the header bar, GSAP pop-in animation, per-section color theming via CSS custom properties, and a `closeIcon` prop for per-window custom close button images
 - **PortfolioWindow** — live portfolio dashboard that fetches real data from Supabase; displays a summary card (total value, cash reserve, capital invested), interactive Recharts line charts for each tracked ticker showing price history, and a holdings table listing current positions (ticker, quantity, avg buy price, estimated value); empty states shown when no stocks are tracked or no holdings exist
@@ -139,7 +143,8 @@ unihack-hackathon-submission/
 │   │   ├── portfolios.py        # Portfolios table CRUD
 │   │   ├── holdings.py          # Holdings table CRUD
 │   │   └── transactions.py      # Transactions table CRUD
-│   ├── routers/                 # FastAPI routers (one per table)
+│   ├── routers/                 # FastAPI routers (one per table + chat)
+│   │   ├── chat.py              # /chat and /chat/reset endpoints (chatbot API)
 │   │   ├── users.py             # /database/users endpoints
 │   │   ├── portfolios.py        # /database/portfolios endpoints
 │   │   ├── holdings.py          # /database/holdings endpoints

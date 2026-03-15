@@ -34,6 +34,7 @@ from routers import users as users_router
 from routers import portfolios as portfolios_router
 from routers import holdings as holdings_router
 from routers import transactions as transactions_router
+from routers import chat as chat_router
 from schemas.response import error_response
 
 load_dotenv()
@@ -968,6 +969,7 @@ app.include_router(users_router.router)
 app.include_router(portfolios_router.router)
 app.include_router(holdings_router.router)
 app.include_router(transactions_router.router)
+app.include_router(chat_router.router)
 
 
 # ── Validation error handler ───────────────────────────────────────────────────────

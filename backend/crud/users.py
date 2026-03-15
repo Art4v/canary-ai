@@ -65,6 +65,11 @@ def create(db: Client, payload: dict) -> tuple[dict | None, str | None]:
         plaintext = payload.pop("password")
         payload["password_hash"] = _hash_password(plaintext)
 
+        # If an API key is provided, hash it with bcrypt before storage.
+        # The database stores only the hash — the plaintext key is never persisted.
+        if "api_key" in payload and payload["api_key"] is not None:
+            payload["api_key"] = _hash_password(payload["api_key"])
+
         response = db.table("users").insert(payload).execute()
         return response.data[0] if response.data else None, None
     except Exception as exc:
@@ -89,6 +94,11 @@ def update_by_username(db: Client, username: str, payload: dict) -> tuple[dict |
     if "password" in payload:
         plaintext = payload.pop("password")
         payload["password_hash"] = _hash_password(plaintext)
+
+    # If an API key is provided, hash it with bcrypt before storage.
+    # The database stores only the hash — the plaintext key is never persisted.
+    if "api_key" in payload and payload["api_key"] is not None:
+        payload["api_key"] = _hash_password(payload["api_key"])
 
     try:
         response = (
