@@ -1,15 +1,22 @@
 """
-Preference Collection Chatbot
-==============================
+Preference Collection Chatbot — State Machine Edition
+======================================================
 A terminal-based chatbot that uses the Anthropic SDK to collect exactly 4
-investment preference data points through natural, casual (SMS-style)
-conversation. Supports persistent memory across sessions and requires
-explicit user confirmation before saving anything.
+investment preference data points through natural, SMS-style conversation.
+Uses a state machine to handle per-stock discussions and immediate saves
+for non-stock fields.
+
+States:
+    COLLECTING       — gathering the 4 base fields (cash_reserve, trading_style,
+                       stock_preferences, stocks_to_keep)
+    DISCUSSING_STOCK — brief back-and-forth about a specific stock ticker
+    CONFIRMING_STOCK — "Adding NVDA to your portfolio. Happy to commit?"
+    ADVISING         — all 4 fields collected, open conversation / recommendations
 
 Collected fields:
-    1. stocks_to_keep  — list of uppercase ticker symbols to hold
-    2. cash_reserve    — numeric dollar amount to keep as cash
-    3. trading_style   — one of "risk-aggressive", "balanced", "risk-averse"
+    1. stocks_to_keep    — list of uppercase ticker symbols to hold
+    2. cash_reserve      — numeric dollar amount to keep as cash
+    3. trading_style     — one of "risk-aggressive", "balanced", "risk-averse"
     4. stock_preferences — list of stock-related preferences / themes
 
 Usage:
@@ -23,6 +30,7 @@ Commands:
 """
 
 import os
+import re
 import json
 from datetime import datetime
 
@@ -54,15 +62,49 @@ _REQUIRED_FIELDS = ["stocks_to_keep", "cash_reserve", "trading_style", "stock_pr
 # Valid trading style values — extraction must match one of these exactly
 _VALID_TRADING_STYLES = ["risk-aggressive", "balanced", "risk-averse"]
 
+# Module-level signal lists for yes/no detection
+_POSITIVE_SIGNALS = [
+    "yes", "yeah", "yep", "yup", "sure", "go for it",
+    "confirm", "do it", "save", "add it", "looks good",
+    "correct", "that's right", "perfect", "lgtm", "ok", "okay",
+    "absolutely", "definitely", "for sure", "bet", "let's go",
+]
+
+_NEGATIVE_SIGNALS = [
+    "no", "nah", "nope", "wait", "hold on", "change",
+    "wrong", "not right", "fix", "update", "actually",
+    "skip", "pass", "drop it", "never mind", "nvm",
+]
+
+
+class ConversationState:
+    """
+    Enum-like class representing the 4 states of the chatbot's state machine.
+
+    COLLECTING       — gathering the 4 base preference fields
+    DISCUSSING_STOCK — brief back-and-forth about a specific stock ticker
+    CONFIRMING_STOCK — asking user to commit/decline a specific stock
+    ADVISING         — all fields collected, open-ended investment conversation
+    """
+    COLLECTING = "COLLECTING"
+    DISCUSSING_STOCK = "DISCUSSING_STOCK"
+    CONFIRMING_STOCK = "CONFIRMING_STOCK"
+    ADVISING = "ADVISING"
+
 
 # ---------------------------------------------------------------------------
 # System prompts
 # ---------------------------------------------------------------------------
 
-def build_advisor_system_prompt(collected: dict, memory_content: str) -> str:
+def build_advisor_system_prompt(
+    collected: dict,
+    memory_content: str,
+    state: str,
+    pending_stock: str | None = None,
+) -> str:
     """
-    Build a dynamic system prompt that tells Claude what has been collected
-    so far, what still needs collecting, and any prior memory context.
+    Build a dynamic system prompt that tells Claude the current state,
+    what has been collected, what still needs collecting, and any prior memory.
 
     Parameters
     ----------
@@ -70,6 +112,10 @@ def build_advisor_system_prompt(collected: dict, memory_content: str) -> str:
         Currently collected preference fields (may be partial).
     memory_content : str
         Raw contents of memory.md, or empty string if no prior memory.
+    state : str
+        Current ConversationState value (COLLECTING, DISCUSSING_STOCK, etc.).
+    pending_stock : str or None
+        The ticker symbol currently being discussed/confirmed (if any).
 
     Returns
     -------
@@ -99,15 +145,23 @@ def build_advisor_system_prompt(collected: dict, memory_content: str) -> str:
             f"{memory_content}"
         )
 
-    return f"""You are Canary AI, a casual investment preference collector. Your job is to \
-collect exactly 4 pieces of information from the user through natural conversation.
+    # State-specific instructions — tells Claude exactly how to behave
+    # depending on where we are in the conversation flow
+    state_instructions = _build_state_instructions(state, pending_stock, missing)
 
-## Your personality
-- Casual SMS tone — short sentences, no fluff, no corporate speak
-- Friendly but direct — like texting a friend who happens to know finance
-- Ask ONE question at a time — don't overwhelm
-- Use lowercase freely, contractions are fine
-- Keep responses short — 1-3 sentences max
+    return f"""You are Canary AI, a casual investment preference collector. Your job is to \
+collect exactly 4 pieces of information from the user through natural conversation, \
+then help them with investment questions once everything's set.
+
+## Your personality — SMS tone, enforced strictly
+- Text like you're messaging a friend who knows finance
+- Short sentences. Max 2-3 sentences per reply. No essays.
+- Lowercase is fine, contractions encouraged, no corporate speak
+- Examples of good tone: "nice, got it 👍", "solid pick — wanna lock it in?", \
+"cool cool, what about cash?"
+- Examples of BAD tone: "Thank you for providing that information. I have recorded your \
+preference for technology stocks.", "Certainly! I'd be happy to help you with that."
+- ONE question or topic per reply — never stack multiple questions
 
 ## The 4 fields you need to collect
 1. stocks_to_keep — which stock tickers the user wants to hold onto (list, can be empty)
@@ -119,24 +173,88 @@ collect exactly 4 pieces of information from the user through natural conversati
 {status_block}
 
 ## Fields still needed
-{', '.join(missing) if missing else 'ALL COLLECTED — proceed to confirmation'}
+{', '.join(missing) if missing else 'ALL COLLECTED ✓'}
 
-## Rules
+## Current state: {state}
+{state_instructions}
+
+## General rules
 - If the user says "none" or "no stocks" for stocks_to_keep → that's valid (empty list)
 - If the user says "$0" or "zero" for cash → that's valid (0.0)
 - If the user gives an ambiguous trading style answer (e.g. "medium" or "kinda risky"), \
 ask them to clarify which of the 3 options fits best
 - If the user provides multiple fields in one message, acknowledge all of them
 - If the user wants to change a previously set field, accept the new value
-- When all 4 fields are collected, show a plain-language summary of what you're about to save \
-and ask for explicit confirmation before anything gets written
-- NEVER auto-commit — always wait for a clear "yes" / "yeah" / "go for it" / "confirm" / "add it"
-- If the user's confirmation is ambiguous, ask once more to clarify, then drop it if still unclear
-- If the user declines confirmation, acknowledge it and ask what they want to change
+- Non-stock fields (cash_reserve, trading_style, stock_preferences) are saved immediately — \
+no confirmation needed for those. Just acknowledge with a brief "got it" style response.
+- Stock tickers require a brief discussion before committing — don't auto-add them
 {memory_section}"""
 
 
+def _build_state_instructions(
+    state: str,
+    pending_stock: str | None,
+    missing: list[str],
+) -> str:
+    """
+    Generate state-specific behavioral instructions for the system prompt.
+
+    Parameters
+    ----------
+    state : str
+        Current ConversationState value.
+    pending_stock : str or None
+        Ticker being discussed/confirmed (if any).
+    missing : list[str]
+        List of field names still needed.
+
+    Returns
+    -------
+    str
+        Instruction block for the current state.
+    """
+    if state == ConversationState.COLLECTING:
+        return (
+            "You're gathering the 4 base fields. Ask about ONE missing field at a time.\n"
+            "If the user mentions a stock ticker, briefly discuss why it's interesting \n"
+            "before asking if they want to add it.\n"
+            "When a non-stock field is provided, acknowledge it casually (it's auto-saved)."
+        )
+
+    elif state == ConversationState.DISCUSSING_STOCK:
+        return (
+            f"You're discussing the stock **{pending_stock}** with the user.\n"
+            f"Give a brief, 1-sentence take on {pending_stock} — why it might be worth holding.\n"
+            "Then ask if they want to add it to their portfolio.\n"
+            "Keep it casual and short — this is a text conversation, not a research report."
+        )
+
+    elif state == ConversationState.CONFIRMING_STOCK:
+        return (
+            f"You just discussed **{pending_stock}**. Now you're waiting for a yes/no.\n"
+            "If the user says yes → great, it'll be added (the system handles saving).\n"
+            "If the user says no → that's fine, acknowledge and move on.\n"
+            "If the answer is unclear, ask ONE more time to clarify, then drop it.\n"
+            "Don't re-explain the stock — just ask for the commit decision."
+        )
+
+    elif state == ConversationState.ADVISING:
+        return (
+            "All 4 fields are collected! You're now in open advising mode.\n"
+            "Help the user with investment questions, discuss stocks, or adjust preferences.\n"
+            "If they mention new stocks, discuss them before adding.\n"
+            "If they want to change a field, accept the update (system saves automatically).\n"
+            "Stay casual and helpful — you're their finance-savvy friend."
+        )
+
+    # Fallback — shouldn't happen but be safe
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # Extraction prompt — JSON-only, no conversation, just structured output
+# ---------------------------------------------------------------------------
+
 _EXTRACTION_SYSTEM_PROMPT = """You are a JSON-only financial data extraction tool. \
 You never produce any text outside of a JSON object.
 
@@ -187,12 +305,12 @@ def load_preferences() -> dict:
 def save_preferences(collected: dict) -> None:
     """
     Write the collected preferences to preferences.json.
-    Only called after the user has explicitly confirmed.
+    Adds a saved_at timestamp for tracking when this was last written.
 
     Parameters
     ----------
     collected : dict
-        The full set of 4 validated preference fields.
+        The current set of preference fields (may be partial or full).
     """
     # Add a timestamp so we know when this was last saved
     data = {**collected, "saved_at": datetime.now().isoformat()}
@@ -241,6 +359,30 @@ def append_memory(entry: str) -> None:
         f.write(f"- {entry}\n")
 
 
+def add_stock_to_preferences(collected: dict, ticker: str) -> None:
+    """
+    Idempotently add a single ticker to the stocks_to_keep list, then save.
+    If the ticker is already present, this is a no-op (still saves to update timestamp).
+
+    Parameters
+    ----------
+    collected : dict
+        Current collected preferences (modified in place).
+    ticker : str
+        Uppercase ticker symbol to add (e.g. "AAPL").
+    """
+    # Ensure stocks_to_keep exists as a list
+    if "stocks_to_keep" not in collected or collected["stocks_to_keep"] is None:
+        collected["stocks_to_keep"] = []
+
+    # Only add if not already present (idempotent)
+    if ticker not in collected["stocks_to_keep"]:
+        collected["stocks_to_keep"].append(ticker)
+
+    # Persist immediately
+    save_preferences(collected)
+
+
 # ---------------------------------------------------------------------------
 # Extraction logic
 # ---------------------------------------------------------------------------
@@ -284,8 +426,10 @@ def extract_preferences(client: Anthropic, messages: list[dict], collected: dict
                     "content": (
                         f"Already collected fields:\n{collected_info}\n\n"
                         f"<conversation>\n{conversation_text}\n</conversation>\n\n"
-                        "Extract any NEW preference fields from the USER's latest message. "
-                        "Return only JSON."
+                        "Extract any NEW preference fields from the conversation, focusing on the USER's latest message. "
+                        "If the user refers to stocks mentioned by the ASSISTANT (e.g. 'invest into all of these', "
+                        "'add those', 'I want them all'), extract the tickers from the ASSISTANT's message that "
+                        "the user is referring to. Return only JSON."
                     ),
                 }
             ],
@@ -305,7 +449,7 @@ def extract_preferences(client: Anthropic, messages: list[dict], collected: dict
 # Validation helpers
 # ---------------------------------------------------------------------------
 
-def validate_and_merge(extracted: dict, collected: dict) -> dict:
+def validate_and_merge(extracted: dict, collected: dict) -> list[str]:
     """
     Validate extracted fields and merge valid ones into the collected dict.
     Invalid fields are silently dropped.
@@ -319,7 +463,7 @@ def validate_and_merge(extracted: dict, collected: dict) -> dict:
 
     Returns
     -------
-    dict
+    list[str]
         List of field names that were newly set or updated.
     """
     updated = []
@@ -382,6 +526,70 @@ def all_fields_collected(collected: dict) -> bool:
     )
 
 
+def _detect_new_tickers(extracted: dict, collected: dict, declined: set[str] | None = None) -> list[str]:
+    """
+    Find tickers in the extraction output that aren't already in the
+    collected stocks_to_keep list and haven't been declined this session.
+
+    Parameters
+    ----------
+    extracted : dict
+        Raw extraction output (may contain "stocks_to_keep").
+    collected : dict
+        Current collected preferences.
+    declined : set[str] or None
+        Tickers declined or dropped during this session (won't be re-queued).
+
+    Returns
+    -------
+    list[str]
+        List of new ticker symbols not already saved or declined.
+    """
+    extracted_tickers = extracted.get("stocks_to_keep", [])
+    if not isinstance(extracted_tickers, list):
+        return []
+
+    # Normalize to uppercase
+    extracted_tickers = [t.upper() for t in extracted_tickers if isinstance(t, str)]
+
+    # Get existing tickers (default to empty list)
+    existing = collected.get("stocks_to_keep") or []
+
+    # Build the declined set (default to empty if not provided)
+    declined = declined or set()
+
+    # Return only tickers not already present and not previously declined
+    return [t for t in extracted_tickers if t not in existing and t not in declined]
+
+
+def _check_yes_no(user_input: str) -> str:
+    """
+    Classify user input as 'yes', 'no', or 'ambiguous' based on signal lists.
+
+    Parameters
+    ----------
+    user_input : str
+        The raw user input string.
+
+    Returns
+    -------
+    str
+        One of 'yes', 'no', or 'ambiguous'.
+    """
+    lower = user_input.lower().strip()
+    # Use word-boundary matching (\b) to avoid false positives —
+    # e.g. "none" must NOT match the "no" signal, "okayed" must NOT match "ok"
+    is_positive = any(re.search(r'\b' + re.escape(signal) + r'\b', lower) for signal in _POSITIVE_SIGNALS)
+    is_negative = any(re.search(r'\b' + re.escape(signal) + r'\b', lower) for signal in _NEGATIVE_SIGNALS)
+
+    if is_positive and not is_negative:
+        return "yes"
+    elif is_negative and not is_positive:
+        return "no"
+    else:
+        return "ambiguous"
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -393,8 +601,14 @@ def main() -> None:
     Flow:
     1. Load API key from .env
     2. Load existing preferences.json (returning user) and memory.md
-    3. Loop: read input → respond casually → extract fields → confirm → save
-    4. Handle 'quit'/'exit' and Ctrl+C gracefully
+    3. State machine loop:
+       - COLLECTING: gather fields, detect new stocks → DISCUSSING_STOCK
+       - DISCUSSING_STOCK: Claude discusses ticker → CONFIRMING_STOCK
+       - CONFIRMING_STOCK: yes/no/ambiguous → add or decline, pop queue
+       - ADVISING: all fields set, open conversation
+    4. Non-stock fields are saved immediately (no confirmation)
+    5. Stock tickers are discussed one-by-one before committing
+    6. Handle 'quit'/'exit' and Ctrl+C gracefully with session-end memory
     """
     # --- Load API key from the .env next to this script ---
     load_dotenv(_ENV_PATH)
@@ -441,129 +655,275 @@ def main() -> None:
     # Conversation history in Anthropic SDK format
     messages: list[dict] = []
 
-    # Track whether we're currently in the confirmation flow
-    awaiting_confirmation = False
+    # --- State machine variables ---
+    # Current state — start in COLLECTING, or ADVISING if all fields already set
+    state = ConversationState.ADVISING if all_fields_collected(collected) else ConversationState.COLLECTING
+    # The stock ticker currently being discussed or confirmed
+    pending_stock: str | None = None
+    # Queue of tickers waiting to be discussed (for multi-stock mentions)
+    stock_queue: list[str] = []
+    # How many times we've asked for clarification on a stock confirm
+    # (drop the stock after 2 ambiguous answers)
+    clarification_count = 0
+    # Tickers declined or dropped during this session — prevents re-queuing
+    # when extraction picks them up again from conversation context
+    declined_stocks: set[str] = set()
+    # Track the state we should return to after finishing stock discussions
+    # (either COLLECTING or ADVISING)
+    return_state = state
 
     # --- Main conversation loop ---
     while True:
         try:
             user_input = input("You: ").strip()
         except (KeyboardInterrupt, EOFError):
-            # Ctrl+C or Ctrl+D — exit cleanly
+            # Ctrl+C or Ctrl+D — exit cleanly, log session end to memory
             print("\n\nsee ya! ✌️")
+            # Log pending context if we were mid-discussion
+            if pending_stock:
+                append_memory(f"Session ended mid-discussion about {pending_stock} (not committed)")
+            if stock_queue:
+                append_memory(f"Session ended with queued stocks not discussed: {', '.join(stock_queue)}")
             break
 
         # Skip empty lines
         if not user_input:
             continue
 
-        # Handle exit commands
+        # Handle exit commands — same session-end memory logic
         if user_input.lower() in ("quit", "exit"):
             print("\nsee ya! ✌️")
+            if pending_stock:
+                append_memory(f"Session ended mid-discussion about {pending_stock} (not committed)")
+            if stock_queue:
+                append_memory(f"Session ended with queued stocks not discussed: {', '.join(stock_queue)}")
             break
 
         # Append the user message to conversation history
         messages.append({"role": "user", "content": user_input})
 
-        # Build a dynamic system prompt reflecting current collection state + memory
-        system_prompt = build_advisor_system_prompt(collected, memory_content)
+        # =================================================================
+        # STATE: CONFIRMING_STOCK — check yes/no/ambiguous before calling Claude
+        # =================================================================
+        if state == ConversationState.CONFIRMING_STOCK:
+            decision = _check_yes_no(user_input)
 
-        # --- Call Claude for a casual conversational response ---
-        try:
-            response = client.messages.create(
-                model=_MODEL,
-                max_tokens=256,
-                system=system_prompt,
-                messages=messages,
-            )
+            if decision == "yes":
+                # User confirmed — add the stock and save
+                add_stock_to_preferences(collected, pending_stock)
+                print(f"  [✓ {pending_stock} added to stocks_to_keep]")
+                append_memory(f"User confirmed adding {pending_stock} to portfolio")
+                # Reload memory so future prompts see the update
+                memory_content = load_memory()
 
-            reply = response.content[0].text
-            print(f"\nAdvisor: {reply}\n")
+                # Pop next stock from queue or return to previous state
+                if stock_queue:
+                    pending_stock = stock_queue.pop(0)
+                    # Set to CONFIRMING_STOCK — the response below already discusses
+                    # the stock via the system prompt, so go straight to confirmation
+                    state = ConversationState.CONFIRMING_STOCK
+                    clarification_count = 0
+                else:
+                    pending_stock = None
+                    clarification_count = 0
+                    # Check if all fields are now collected
+                    state = ConversationState.ADVISING if all_fields_collected(collected) else return_state
 
-            # Store the assistant reply in conversation history
-            messages.append({"role": "assistant", "content": reply})
+                # Generate a brief acknowledgment via Claude
+                system_prompt = build_advisor_system_prompt(collected, memory_content, state, pending_stock)
+                try:
+                    response = client.messages.create(
+                        model=_MODEL, max_tokens=256,
+                        system=system_prompt, messages=messages,
+                    )
+                    reply = response.content[0].text
+                    print(f"\nAdvisor: {reply}\n")
+                    messages.append({"role": "assistant", "content": reply})
+                except Exception as exc:
+                    print(f"\n[API error: {exc}]\n")
+                    messages.pop()
+                continue
 
-        except Exception as exc:
-            # API errors shouldn't kill the loop
-            print(f"\n[API error: {exc}]\n")
-            messages.pop()  # Remove the failed user message
+            elif decision == "no":
+                # User declined — log to memory and move on
+                append_memory(f"User declined adding {pending_stock} to portfolio")
+                memory_content = load_memory()
+                print(f"  [— {pending_stock} not added]")
+
+                # Track this declined stock so it won't be re-queued
+                declined_stocks.add(pending_stock)
+
+                # Pop next stock from queue or return to previous state
+                if stock_queue:
+                    pending_stock = stock_queue.pop(0)
+                    # Set to CONFIRMING_STOCK — the response below already discusses
+                    # the stock via the system prompt, so go straight to confirmation
+                    state = ConversationState.CONFIRMING_STOCK
+                    clarification_count = 0
+                else:
+                    pending_stock = None
+                    clarification_count = 0
+                    state = ConversationState.ADVISING if all_fields_collected(collected) else return_state
+
+                # Let Claude acknowledge the decline
+                system_prompt = build_advisor_system_prompt(collected, memory_content, state, pending_stock)
+                try:
+                    response = client.messages.create(
+                        model=_MODEL, max_tokens=256,
+                        system=system_prompt, messages=messages,
+                    )
+                    reply = response.content[0].text
+                    print(f"\nAdvisor: {reply}\n")
+                    messages.append({"role": "assistant", "content": reply})
+                except Exception as exc:
+                    print(f"\n[API error: {exc}]\n")
+                    messages.pop()
+                continue
+
+            else:
+                # Ambiguous — clarify once, then drop on second ambiguity
+                clarification_count += 1
+                if clarification_count >= 2:
+                    # Too many unclear answers — drop this stock
+                    append_memory(f"Dropped {pending_stock} after ambiguous responses (not committed)")
+                    memory_content = load_memory()
+                    print(f"  [— {pending_stock} dropped (unclear response)]")
+
+                    # Track this dropped stock so it won't be re-queued
+                    declined_stocks.add(pending_stock)
+
+                    if stock_queue:
+                        pending_stock = stock_queue.pop(0)
+                        # Set to CONFIRMING_STOCK — the response below already discusses
+                        # the stock via the system prompt, so go straight to confirmation
+                        state = ConversationState.CONFIRMING_STOCK
+                        clarification_count = 0
+                    else:
+                        pending_stock = None
+                        clarification_count = 0
+                        state = ConversationState.ADVISING if all_fields_collected(collected) else return_state
+
+                # Let Claude ask for clarification (or acknowledge the drop)
+                system_prompt = build_advisor_system_prompt(collected, memory_content, state, pending_stock)
+                try:
+                    response = client.messages.create(
+                        model=_MODEL, max_tokens=256,
+                        system=system_prompt, messages=messages,
+                    )
+                    reply = response.content[0].text
+                    print(f"\nAdvisor: {reply}\n")
+                    messages.append({"role": "assistant", "content": reply})
+                except Exception as exc:
+                    print(f"\n[API error: {exc}]\n")
+                    messages.pop()
+                continue
+
+        # =================================================================
+        # STATE: DISCUSSING_STOCK — Claude's reply transitions to CONFIRMING
+        # =================================================================
+        if state == ConversationState.DISCUSSING_STOCK:
+            # Generate Claude's discussion of the pending stock
+            system_prompt = build_advisor_system_prompt(collected, memory_content, state, pending_stock)
+            try:
+                response = client.messages.create(
+                    model=_MODEL, max_tokens=256,
+                    system=system_prompt, messages=messages,
+                )
+                reply = response.content[0].text
+                print(f"\nAdvisor: {reply}\n")
+                messages.append({"role": "assistant", "content": reply})
+            except Exception as exc:
+                print(f"\n[API error: {exc}]\n")
+                messages.pop()
+                continue
+
+            # After discussion, move to confirmation
+            state = ConversationState.CONFIRMING_STOCK
+            clarification_count = 0
             continue
 
-        # --- If awaiting confirmation, check the user's response ---
-        if awaiting_confirmation:
-            # Check for positive confirmation signals in the user's message
-            positive_signals = [
-                "yes", "yeah", "yep", "yup", "sure", "go for it",
-                "confirm", "do it", "save", "add it", "looks good",
-                "correct", "that's right", "perfect", "lgtm", "ok", "okay"
-            ]
-            lower_input = user_input.lower().strip()
+        # =================================================================
+        # STATE: COLLECTING or ADVISING — extract fields, handle stocks
+        # =================================================================
 
-            # Check for negative signals
-            negative_signals = [
-                "no", "nah", "nope", "wait", "hold on", "change",
-                "wrong", "not right", "fix", "update", "actually"
-            ]
-
-            is_positive = any(signal in lower_input for signal in positive_signals)
-            is_negative = any(signal in lower_input for signal in negative_signals)
-
-            if is_positive and not is_negative:
-                # User confirmed — save preferences and log to memory
-                save_preferences(collected)
-                print("  [✓ Preferences saved to preferences.json]")
-
-                # Build memory entries for what was confirmed
-                memory_entries = []
-                if "trading_style" in collected:
-                    memory_entries.append(f"User confirmed trading style: {collected['trading_style']}")
-                if "stocks_to_keep" in collected:
-                    tickers = collected["stocks_to_keep"]
-                    if tickers:
-                        memory_entries.append(f"Stocks to keep: {', '.join(tickers)}")
-                    else:
-                        memory_entries.append("User has no stocks to keep (empty list)")
-                if "cash_reserve" in collected:
-                    memory_entries.append(f"Cash reserve set to ${collected['cash_reserve']:,.2f}")
-                if "stock_preferences" in collected:
-                    prefs = collected["stock_preferences"]
-                    if prefs:
-                        memory_entries.append(f"Stock preferences: {', '.join(prefs)}")
-
-                # Append all entries to memory.md
-                for entry in memory_entries:
-                    append_memory(entry)
-                print("  [✓ Session logged to memory.md]\n")
-
-                awaiting_confirmation = False
-                continue
-            elif is_negative:
-                # User declined — reset confirmation state, keep collecting
-                awaiting_confirmation = False
-                # Don't extract from this message — it's a rejection, not new data
-                continue
-            else:
-                # Ambiguous — the advisor's reply already asked to clarify
-                # Stay in confirmation mode for one more round
-                continue
-
-        # --- Extract preference fields from the user's latest message ---
+        # Extract preference fields from the user's latest message
         extracted = extract_preferences(client, messages, collected)
 
-        if extracted:
-            # Validate and merge into the collected dict
-            updated = validate_and_merge(extracted, collected)
-            if updated:
-                # Show what was picked up
-                for field in updated:
-                    print(f"  [Got {field}: {collected[field]}]")
-                print()
+        # Detect new tickers that need discussion before adding
+        # Pass declined_stocks so previously declined tickers aren't re-queued
+        new_tickers = _detect_new_tickers(extracted, collected, declined_stocks) if extracted else []
 
-        # --- Check if all fields are now collected → enter confirmation flow ---
-        if all_fields_collected(collected) and not awaiting_confirmation:
-            awaiting_confirmation = True
-            # The system prompt already instructs Claude to show a summary
-            # and ask for confirmation, so the next advisor response will do that
+        # Remove stocks_to_keep from extracted so validate_and_merge doesn't
+        # auto-add them — stocks go through the discussion flow instead
+        extracted_without_stocks = {k: v for k, v in extracted.items() if k != "stocks_to_keep"}
+
+        # Validate and merge non-stock fields
+        if extracted_without_stocks:
+            updated = validate_and_merge(extracted_without_stocks, collected)
+            if updated:
+                # Save immediately for non-stock fields — no confirmation needed
+                save_preferences(collected)
+                for field in updated:
+                    print(f"  [✓ {field}: {collected[field]}]")
+                    # Log each field update to memory
+                    if field == "cash_reserve":
+                        append_memory(f"Cash reserve set to ${collected['cash_reserve']:,.2f}")
+                    elif field == "trading_style":
+                        append_memory(f"Trading style set to {collected['trading_style']}")
+                    elif field == "stock_preferences":
+                        prefs = collected["stock_preferences"]
+                        if prefs:
+                            append_memory(f"Stock preferences set to: {', '.join(prefs)}")
+                # Reload memory after updates
+                memory_content = load_memory()
+
+        # Check if we should transition to ADVISING (all non-stock fields + stocks set)
+        if state == ConversationState.COLLECTING and all_fields_collected(collected):
+            state = ConversationState.ADVISING
+
+        # If new tickers were mentioned, queue them for discussion
+        if new_tickers:
+            # Remember what state to return to after stock discussions
+            return_state = ConversationState.ADVISING if all_fields_collected(collected) else ConversationState.COLLECTING
+            # Set up the first ticker for discussion, queue the rest
+            pending_stock = new_tickers[0]
+            stock_queue.extend(new_tickers[1:])
+            state = ConversationState.DISCUSSING_STOCK
+            clarification_count = 0
+
+            # Generate Claude's discussion of this stock
+            system_prompt = build_advisor_system_prompt(collected, memory_content, state, pending_stock)
+            try:
+                response = client.messages.create(
+                    model=_MODEL, max_tokens=256,
+                    system=system_prompt, messages=messages,
+                )
+                reply = response.content[0].text
+                print(f"\nAdvisor: {reply}\n")
+                messages.append({"role": "assistant", "content": reply})
+            except Exception as exc:
+                print(f"\n[API error: {exc}]\n")
+                messages.pop()
+                continue
+
+            # After discussion reply, move to confirmation
+            state = ConversationState.CONFIRMING_STOCK
+            continue
+
+        # No new stocks — just generate a normal conversational response
+        system_prompt = build_advisor_system_prompt(collected, memory_content, state, pending_stock)
+        try:
+            response = client.messages.create(
+                model=_MODEL, max_tokens=256,
+                system=system_prompt, messages=messages,
+            )
+            reply = response.content[0].text
+            print(f"\nAdvisor: {reply}\n")
+            messages.append({"role": "assistant", "content": reply})
+        except Exception as exc:
+            print(f"\n[API error: {exc}]\n")
+            messages.pop()
+            continue
 
 
 # Only run when executed directly (not imported)

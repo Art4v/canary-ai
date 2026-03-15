@@ -81,12 +81,18 @@ A hackathon project built for UNIHACK 2026.
     - `POST /database/transactions` — create a transaction (`{"username", "ticker", "tx_type", "quantity", "price_per_unit", "total_amount"}`)
     - `PUT /database/transactions/{username}` — update transaction fields
     - `DELETE /database/transactions/{username}` — delete all transactions for a user
-- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation
+- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture
+  - **State machine** with 4 states: `COLLECTING` (gathering base fields), `DISCUSSING_STOCK` (brief back-and-forth about a specific ticker), `CONFIRMING_STOCK` (yes/no commit decision), `ADVISING` (all fields set, open conversation)
   - Collects: `stocks_to_keep` (ticker list), `cash_reserve` (dollar amount), `trading_style` (risk-aggressive / balanced / risk-averse), `stock_preferences` (themes/sectors list)
   - Separate Claude API call extracts and validates fields from each user message; resolves company names to tickers (Apple → AAPL), normalizes cash amounts ($10k → 10000)
-  - Pre-commit confirmation flow — shows a plain-language summary and waits for explicit user confirmation before writing `preferences.json`
-  - Persistent memory via `memory.md` — logs confirmed decisions with dated entries; loaded on startup so the advisor references prior context naturally (e.g. "last time you passed on NVDA — still a no?")
-  - Returning user support — loads `preferences.json` on startup to pre-populate fields and skip re-asking known info
+  - **Per-stock discussion flow** — each new ticker triggers a brief discussion before asking for a commit; multi-stock mentions (e.g. "keep AAPL, MSFT, TSLA") are queued and discussed one-by-one; when popping the next stock from the queue, the state transitions directly to `CONFIRMING_STOCK` (the discussion is already in the generated response) so the user's next "yes"/"no" is handled correctly
+  - **Referential stock extraction** — when the user refers to stocks mentioned by the assistant (e.g. "invest into all of these", "add those"), the extraction model resolves the reference from conversation context and extracts the correct tickers
+  - **Immediate save for non-stock fields** — cash_reserve, trading_style, and stock_preferences are saved to `preferences.json` instantly with no confirmation needed
+  - **Stock confirmation** — stocks require explicit yes/no before adding; uses word-boundary matching (regex `\b`) so "none" won't false-trigger a "no" decline; ambiguous replies get one clarification attempt, then the stock is dropped
+  - **Declined stock tracking** — tickers that are declined or dropped during a session are remembered in a `declined_stocks` set and filtered out of future extraction results, preventing stale re-queuing from conversation context
+  - Persistent memory via `memory.md` — logs every action (field saves, stock confirmations, stock declines, session-end context) with dated entries; loaded on startup so the advisor references prior context naturally
+  - **Session-end memory** — on quit/exit/Ctrl+C, any pending stock discussions or queued tickers are logged to memory for continuity
+  - Returning user support — loads `preferences.json` on startup to pre-populate fields; if all 4 fields are set, starts directly in ADVISING state
   - Edge cases: "none"/"no stocks" → empty list, "$0"/"zero" → 0.0, ambiguous trading style → asks to clarify, multiple fields in one message → all extracted
   - Commands: `quit`/`exit` exits, Ctrl+C exits cleanly
   - API key loaded from `backend/chatbot/.env` (not committed); copy `.env.example` to `.env` and add your key
