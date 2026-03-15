@@ -24,7 +24,7 @@ A hackathon project built for UNIHACK 2026.
 
 ### Backend
 
-- **Dashboard (React SPA)** — `GET /dashboard` serves the built React frontend; all sub-paths (`/dashboard/login`, `/dashboard/register`, `/dashboard/`) are handled by React Router via an SPA catch-all route; static assets (JS, CSS, images) are served from the same mount
+- **Landing (React SPA)** — `GET /landing` serves the built React frontend; all sub-paths (`/landing/login`, `/landing/register`, `/landing/`) are handled by React Router via an SPA catch-all route; static assets (JS, CSS, images) are served from the same mount
 - **Health-check endpoint** — `GET /` returns `{ "status": "ok" }`
 - **Live stock tracking** — when tracking starts, 2 days of historical 1-minute candle data are backfilled into the CSV, then background tasks continue fetching the latest candle every 60 seconds
   - `POST /track/{ticker}` — start tracking a ticker (409 if already tracked)
@@ -126,8 +126,8 @@ A hackathon project built for UNIHACK 2026.
 ### Frontend
 
 - **Landing page** — full-page vertically scrollable tree scene (`/`); top section shows "Canary AI" title and a nest composite image with 3 invisible egg hover zones that reveal cracked canary overlays on hover (Login, Sign Up, Credits) with labels above the top shell piece; middle section is a seamlessly repeating bark texture trunk; bottom section uses pure CSS grass (5-layer SVG bumps tiling horizontally for added depth) with individual grass blade SVGs poking above the section edge for a natural non-flat transition, over a radial-gradient green ground (lighter center, darker edges) with scattered inline SVG flowers (white & pink petals) and rocks for a cartoony nature-scene feel, plus Login/Register buttons; GSAP entrance animations on title, nest, and buttons
-- **Authentication context** — `AuthProvider` wraps the app to supply `user`, `login()`, `logout()`, and `updateUser()` via React context; persists the logged-in user object to `localStorage` so sessions survive page reloads; the dashboard route is guarded with a `<Navigate>` redirect to `/login` when no user is authenticated
-- **Login & Register pages** — separate routes (`/dashboard/login`, `/dashboard/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`, then stores the returned user data in `AuthContext`; loading states disable the submit button during requests; server errors are displayed inline
+- **Authentication context** — `AuthProvider` wraps the app to supply `user`, `login()`, `logout()`, and `updateUser()` via React context; persists the logged-in user object to `localStorage` so sessions survive page reloads; the landing route is guarded with a `<Navigate>` redirect to `/login` when no user is authenticated
+- **Login & Register pages** — separate routes (`/landing/login`, `/landing/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`, then stores the returned user data in `AuthContext`; loading states disable the submit button during requests; server errors are displayed inline
 - **Credits page** — glassmorphic card at `/credits` listing the team grouped by role (Frontend, Backend, Artwork) plus a full tech stack table (React, FastAPI, C++17, Supabase, GSAP, Recharts, Anthropic SDK, etc.); back button returns to the landing page; GSAP pop-in animation; scrollable if viewport is short
 - **Theme system** — three modes: `auto`, `night`, and `day`
   - Auto mode cycles based on AEST time (day between 10:00–16:00, night otherwise) and re-evaluates every 60 seconds
@@ -192,7 +192,7 @@ unihack-hackathon-submission/
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── dependencies.py          # Supabase client init + FastAPI Depends
-│   ├── main.py                  # FastAPI app with stock tracking, news, prediction, and dashboard serving
+│   ├── main.py                  # FastAPI app with stock tracking, news, prediction, and landing page serving
 │   └── requirements.txt         # Python dependencies (includes aiofiles for async static serving)
 ├── frontend/
 │   ├── public/                # Static assets (favicon, icons)
@@ -230,7 +230,7 @@ unihack-hackathon-submission/
 │   ├── dist/                  # Production build output (generated by `npm run build`)
 │   ├── index.html             # HTML shell
 │   ├── package.json
-│   └── vite.config.js         # Vite config with @ alias and base: '/dashboard/'
+│   └── vite.config.js         # Vite config with @ alias and base: '/landing/'
 ├── planning/
 │   └── sms-notifications.md   # Two-way SMS feature plan (Twilio)
 ├── .gitignore                 # Root gitignore (chatbot secrets & runtime data)
@@ -259,7 +259,7 @@ The API server starts at `http://127.0.0.1:8000`.
 
 ### Serving the frontend from FastAPI
 
-Build the React app first, then start the backend — it will serve the SPA at `/dashboard`:
+Build the React app first, then start the backend — it will serve the SPA at `/landing`:
 
 ```bash
 cd frontend
@@ -271,7 +271,7 @@ pip install -r requirements.txt   # installs aiofiles + other deps
 python main.py
 ```
 
-Open `http://127.0.0.1:8000/dashboard` to use the app. React Router routes (`/dashboard/login`, `/dashboard/register`, `/dashboard/`) all work from this single server.
+Open `http://127.0.0.1:8000/landing` to use the app. React Router routes (`/landing/login`, `/landing/register`, `/landing/`) all work from this single server.
 
 ### Frontend (dev server)
 
@@ -281,4 +281,4 @@ npm install
 npm run dev
 ```
 
-Vite dev server starts at `http://localhost:5173` (default). With `basename="/dashboard"`, navigate to `http://localhost:5173/dashboard/` during development.
+Vite dev server starts at `http://localhost:5173` (default). With `basename="/landing"`, navigate to `http://localhost:5173/landing/` during development.

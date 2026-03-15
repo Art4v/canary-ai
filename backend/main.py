@@ -1264,15 +1264,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# ── Dashboard (React SPA) ─────────────────────────────────────────────────
-# Serve index.html for all /dashboard/* paths so React Router handles
+# ── Landing (React SPA) ───────────────────────────────────────────────────
+# Serve index.html for all /landing/* paths so React Router handles
 # client-side navigation (login, register, etc.).
 
-@app.get("/dashboard/{full_path:path}")
-@app.get("/dashboard")
-async def serve_dashboard(full_path: str = ""):
+@app.get("/landing/{full_path:path}")
+@app.get("/landing")
+async def serve_landing(full_path: str = ""):
     """
-    Serve the React SPA for all /dashboard/* paths.
+    Serve the React SPA for all /landing/* paths.
 
     If full_path points to an actual file on disk (e.g. assets/index-xxx.js),
     serve that file directly. Otherwise, serve index.html so React Router
@@ -1339,11 +1339,11 @@ async def shutdown_event():
     seen_news_ids.clear()
 
 
-# NOTE: No StaticFiles mount at /dashboard — the serve_dashboard() route
+# NOTE: No StaticFiles mount at /landing — the serve_landing() route
 # handler above already serves real static files (JS, CSS, images) when
 # found on disk and falls back to index.html for SPA client-side routing.
 # A StaticFiles mount would shadow the route handler and break SPA paths
-# like /dashboard/login (returning 404 for non-existent files).
+# like /landing/login (returning 404 for non-existent files).
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
