@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useAuth } from '../../contexts/AuthContext.jsx'
 import Window from './Window'
 import closeIcon from '@/assets/settings/settings_close.png'
 import './SettingsWindow.css'
@@ -11,12 +12,15 @@ import './SettingsWindow.css'
  *   1. Username   — text input + Save
  *   2. API Key    — masked password input + Save
  *   3. Email      — text input + Save
- *   4. Password   — password input + Save
+ *   4. Password   — current + new password fields + Save
  *   5. Trading Style — dropdown select + Save
- *   6. Notifications — toggle slider (no action cell)
+ *   6. Notifications — toggle slider (saves on toggle, no button)
  *
- * Save handlers are stubs (console.log only) — database integration
- * will be added in a later phase.
+ * Each Save button calls PUT /database/users/{username} to persist
+ * the change to Supabase. Password changes require verifying the
+ * current password via POST /database/users/login before updating.
+ *
+ * Inline success/error feedback is shown per-row after each save.
  *
  * @param {string}   windowId         Unique identifier for snap system
  * @param {Function} onClose          Called when the window's close button is clicked
@@ -26,42 +30,201 @@ import './SettingsWindow.css'
  * @returns {JSX.Element}
  */
 export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
+  /* Auth context — read current user data and update after successful saves */
+  const { user, updateUser } = useAuth()
+
   /* ── Local State ──
      Each setting field has its own piece of state so rows update independently. */
   const [username, setUsername] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')   // verify before changing
+  const [newPassword, setNewPassword] = useState('')            // the new password to set
   const [tradingStyle, setTradingStyle] = useState('balanced')
   const [notifications, setNotifications] = useState(true)
 
-  /* ── Stub Save Handlers ──
-     Each row has its own save function. Currently they just log to the console;
-     real persistence will be wired up when the backend is ready. */
+  /* Per-row feedback messages — { type: 'success'|'error', text: string } or null */
+  const [feedback, setFeedback] = useState({
+    username: null,
+    apiKey: null,
+    email: null,
+    password: null,
+    tradingStyle: null,
+    notifications: null,
+  })
 
-  /** Save the username (stub) */
-  const handleSaveUsername = () => {
-    console.log('Save Username:', username)
+  /* ── Pre-fill fields from AuthContext user data ──
+     Runs once when the component mounts or when the user object changes. */
+  useEffect(() => {
+    if (user) {
+      setUsername(user.username || '')
+      setApiKey(user.api_key || '')
+      setEmail(user.email || '')
+      setTradingStyle(user.trading_style || 'balanced')
+      setNotifications(user.notifications !== undefined ? user.notifications : true)
+    }
+  }, [user])
+
+  /**
+   * setRowFeedback — helper to set feedback for a specific row.
+   * Auto-clears the feedback after 3 seconds.
+   *
+   * @param {string} row     Row key (e.g. 'username', 'email')
+   * @param {string} type    'success' or 'error'
+   * @param {string} text    Message to display
+   */
+  const setRowFeedback = (row, type, text) => {
+    setFeedback(prev => ({ ...prev, [row]: { type, text } }))
+    /* Auto-clear after 3 seconds */
+    setTimeout(() => {
+      setFeedback(prev => ({ ...prev, [row]: null }))
+    }, 3000)
   }
 
-  /** Save the API key (stub) */
-  const handleSaveApiKey = () => {
-    console.log('Save API Key:', apiKey)
+  /**
+   * saveField — generic helper that PUTs a partial update to the backend.
+   * On success, updates the AuthContext user and shows a success message.
+   * On failure, shows an inline error message.
+   *
+   * @param {string} rowKey      Feedback row key (e.g. 'username')
+   * @param {object} payload     Fields to send in the PUT body
+   * @param {string} [targetUsername]  Username to update (defaults to current user)
+   * @returns {boolean} true if the save succeeded
+   */
+  const saveField = async (rowKey, payload, targetUsername) => {
+    const uname = targetUsername || user?.username
+    if (!uname) {
+      setRowFeedback(rowKey, 'error', 'Not logged in')
+      return false
+    }
+
+    try {
+      const res = await fetch(`/database/users/${encodeURIComponent(uname)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const result = await res.json()
+
+      if (result.success) {
+        /* Merge the updated fields into the AuthContext user object */
+        updateUser(result.data)
+        setRowFeedback(rowKey, 'success', 'Saved!')
+        return true
+      } else {
+        setRowFeedback(rowKey, 'error', result.error || 'Save failed')
+        return false
+      }
+    } catch {
+      setRowFeedback(rowKey, 'error', 'Unable to connect to server')
+      return false
+    }
   }
 
-  /** Save the email address (stub) */
-  const handleSaveEmail = () => {
-    console.log('Save Email:', email)
+  /* ── Save Handlers ──
+     Each row has its own save function that validates locally
+     then calls saveField with the appropriate payload. */
+
+  /** Save the username — also updates the lookup key for future PUTs */
+  const handleSaveUsername = async () => {
+    if (!username.trim()) {
+      setRowFeedback('username', 'error', 'Username cannot be empty')
+      return
+    }
+    /* Use the *current* username from context as the URL param,
+       since we're changing it to a new value */
+    await saveField('username', { username: username.trim() }, user?.username)
   }
 
-  /** Save the password (stub) */
-  const handleSavePassword = () => {
-    console.log('Save Password:', password)
+  /** Save the API key */
+  const handleSaveApiKey = async () => {
+    await saveField('apiKey', { api_key: apiKey })
   }
 
-  /** Save the trading style preference (stub) */
-  const handleSaveTradingStyle = () => {
-    console.log('Save Trading Style:', tradingStyle)
+  /** Save the email address */
+  const handleSaveEmail = async () => {
+    if (!email.trim()) {
+      setRowFeedback('email', 'error', 'Email cannot be empty')
+      return
+    }
+    await saveField('email', { email: email.trim() })
+  }
+
+  /**
+   * Save password — requires verifying the current password first.
+   * 1. POST /database/users/login with { email, currentPassword } to verify
+   * 2. If valid, PUT the new password via saveField
+   */
+  const handleSavePassword = async () => {
+    if (!currentPassword) {
+      setRowFeedback('password', 'error', 'Enter your current password')
+      return
+    }
+    if (!newPassword) {
+      setRowFeedback('password', 'error', 'Enter a new password')
+      return
+    }
+    if (newPassword.length < 4) {
+      setRowFeedback('password', 'error', 'New password is too short')
+      return
+    }
+
+    try {
+      /* Step 1: verify current password via the login endpoint */
+      const verifyRes = await fetch('/database/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user?.email, password: currentPassword }),
+      })
+      const verifyResult = await verifyRes.json()
+
+      if (!verifyResult.success) {
+        setRowFeedback('password', 'error', 'Current password is incorrect')
+        return
+      }
+
+      /* Step 2: set the new password */
+      const ok = await saveField('password', { password: newPassword })
+      if (ok) {
+        /* Clear both fields on success */
+        setCurrentPassword('')
+        setNewPassword('')
+      }
+    } catch {
+      setRowFeedback('password', 'error', 'Unable to connect to server')
+    }
+  }
+
+  /** Save the trading style preference */
+  const handleSaveTradingStyle = async () => {
+    await saveField('tradingStyle', { trading_style: tradingStyle })
+  }
+
+  /**
+   * handleToggleNotifications — save immediately when the toggle changes.
+   * No separate Save button needed for this row.
+   *
+   * @param {boolean} checked  New toggle state
+   */
+  const handleToggleNotifications = async (checked) => {
+    setNotifications(checked)
+    await saveField('notifications', { notifications: checked })
+  }
+
+  /**
+   * renderFeedback — render inline success/error text for a given row.
+   *
+   * @param {string} rowKey  Feedback row key
+   * @returns {JSX.Element|null}
+   */
+  const renderFeedback = (rowKey) => {
+    const fb = feedback[rowKey]
+    if (!fb) return null
+    return (
+      <span className={`settings-feedback settings-feedback--${fb.type}`}>
+        {fb.text}
+      </span>
+    )
   }
 
   return (
@@ -93,6 +256,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
               value={username}
               onChange={e => setUsername(e.target.value)}
             />
+            {renderFeedback('username')}
           </div>
           {/* Action — per-row save button */}
           <div className="settings-cell">
@@ -113,6 +277,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
             />
+            {renderFeedback('apiKey')}
           </div>
           {/* Action — per-row save button */}
           <div className="settings-cell">
@@ -133,6 +298,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
               value={email}
               onChange={e => setEmail(e.target.value)}
             />
+            {renderFeedback('email')}
           </div>
           {/* Action — per-row save button */}
           <div className="settings-cell">
@@ -144,15 +310,23 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
           {/* ── Row 4: Password ── */}
           {/* Label */}
           <div className="settings-cell settings-label">Password</div>
-          {/* Control — password input for hidden entry */}
+          {/* Control — two password fields: current (for verification) + new */}
           <div className="settings-cell">
             <input
               className="settings-input"
               type="password"
-              placeholder="Enter password…"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
+              placeholder="Current password…"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
             />
+            <input
+              className="settings-input settings-input--second"
+              type="password"
+              placeholder="New password…"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+            />
+            {renderFeedback('password')}
           </div>
           {/* Action — per-row save button */}
           <div className="settings-cell">
@@ -175,6 +349,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
               <option value="risk-averse">Risk-Averse</option>
               <option value="risk-aggressive">Risk-Aggressive</option>
             </select>
+            {renderFeedback('tradingStyle')}
           </div>
           {/* Action — per-row save button */}
           <div className="settings-cell">
@@ -186,17 +361,19 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
           {/* ── Row 6: Notifications ── */}
           {/* Label */}
           <div className="settings-cell settings-label">Notifications</div>
-          {/* Control — CSS-only toggle switch (hidden checkbox + styled slider) */}
+          {/* Control — CSS-only toggle switch (hidden checkbox + styled slider).
+              Saves immediately on toggle via handleToggleNotifications. */}
           <div className="settings-cell">
             <label className="settings-toggle">
               <input
                 type="checkbox"
                 checked={notifications}
-                onChange={e => setNotifications(e.target.checked)}
+                onChange={e => handleToggleNotifications(e.target.checked)}
               />
               {/* Pill-shaped track with sliding circular knob */}
               <span className="settings-toggle-slider" />
             </label>
+            {renderFeedback('notifications')}
           </div>
           {/* Action — empty cell to maintain grid alignment */}
           <div className="settings-cell" />

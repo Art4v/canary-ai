@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import gsap from 'gsap'
+import { useAuth } from '../contexts/AuthContext.jsx'
 import SkyBackground from '../features/sky/SkyBackground.jsx'
 import './AuthPages.css'
 
@@ -33,6 +34,9 @@ function LoginPage() {
 
   /* React Router navigation hook */
   const navigate = useNavigate()
+
+  /* Auth context — login() persists user data to state + localStorage */
+  const { login } = useAuth()
 
   /* ── GSAP Card Entrance Animation ──
      Scales the card from 0.8→1 and fades opacity 0→1
@@ -78,7 +82,8 @@ function LoginPage() {
       const result = await res.json()
 
       if (result.success) {
-        /* Login succeeded — redirect to the main dashboard */
+        /* Login succeeded — persist user data in AuthContext and redirect */
+        login(result.data)
         navigate('/')
       } else {
         /* Show the server-provided error (e.g. invalid credentials) */
