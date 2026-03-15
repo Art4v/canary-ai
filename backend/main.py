@@ -801,11 +801,14 @@ async def _run_news_prediction_loop() -> None:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
-            # ── Guard: Anthropic API key ─────────────────────────────
-            api_key = os.getenv("ANTHROPIC_API_KEY")
+            # ── Guard: Anthropic API key (fetched from user "a" in DB) ─
+            from crud import users as crud_users
+            api_key, _key_err = crud_users.get_api_key_by_username(
+                _supabase_client, "a"
+            )
             if not api_key:
                 print(
-                    "[News Prediction] WARNING: ANTHROPIC_API_KEY not set — "
+                    "[News Prediction] WARNING: no API key for user 'a' — "
                     "skipping cycle.",
                     flush=True,
                 )

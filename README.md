@@ -90,7 +90,7 @@ A hackathon project built for UNIHACK 2026.
   - `POST /chat` — send a message (`{"message", "username"}`) and receive `{"reply", "preferences_updated", "memory_entry", "state"}`; runs the full state machine (extraction, stock discussion/confirmation, field validation) per message; fetches the user's portfolio data (cash reserve, capital invested, portfolio value) from the `portfolios` table and injects it into the advisor's system prompt so the chatbot can reference the user's actual financial position when giving advice
   - **Automatic tracking integration** — when a user confirms a stock in the chatbot, tracking and all prediction loops (C++ efficient-frontier, Finnhub news, news-sentiment) are started automatically via `asyncio.create_task()`; when a stock is removed and no tracked tickers remain, the prediction and news-prediction loops are stopped automatically; uses lazy imports (`import main` inside helpers) to avoid circular dependencies; tracking failures are caught and logged without breaking the chat response
   - `POST /chat/reset` — clear the server-side session for a user (`{"username"}`); does not clear persisted DB memory/preferences
-- **API key hashing** — when a user saves an API key via `PUT /database/users/{username}`, the backend hashes it with bcrypt before storing (same pattern as passwords); the frontend sends plaintext, the backend handles hashing
+- **Per-user API keys** — each user stores their own Anthropic API key (plaintext) in the `users` table via `PUT /database/users/{username}`; the chatbot and news-prediction loop fetch the key from the DB at runtime instead of using a shared `.env` key; the `/chat` endpoint returns 403 if no key is configured
 - **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture; available both as a standalone terminal app and via the `/chat` REST API
   - **State machine** with 4 states: `COLLECTING` (gathering base fields), `DISCUSSING_STOCK` (brief back-and-forth about a specific ticker), `CONFIRMING_STOCK` (yes/no commit decision), `ADVISING` (all fields set, open conversation)
   - Collects: `stocks_to_keep` (ticker list), `cash_reserve` (dollar amount), `trading_style` (risk-aggressive / balanced / risk-averse), `stock_preferences` (themes/sectors list)
@@ -106,7 +106,7 @@ A hackathon project built for UNIHACK 2026.
   - Returning user support — loads `preferences.json` on startup to pre-populate fields; if all 4 fields are set, starts directly in ADVISING state
   - Edge cases: "none"/"no stocks" → empty list, "$0"/"zero" → 0.0, ambiguous trading style → asks to clarify, multiple fields in one message → all extracted
   - Commands: `quit`/`exit` exits, Ctrl+C exits cleanly
-  - API key loaded from the shared `backend/.env` file (not committed); add `ANTHROPIC_API_KEY=your_key` to `backend/.env`
+  - When used via the `/chat` REST API, the Anthropic API key is loaded per-user from the database; the standalone CLI still uses `ANTHROPIC_API_KEY` from `backend/.env`
   - Run: `cd backend/chatbot && python advisor.py`
 - **News-sentiment trade overlay** (`backend/news_prediction/news_prediction.py`) — Python script that adjusts the C++ quant optimizer's trade plan based on Finnhub news sentiment via Claude (claude-opus-4-6)
   - Loads a Finnhub news CSV, the existing `portfolio.csv` (C++ output), and `holdings.csv`
@@ -120,7 +120,7 @@ A hackathon project built for UNIHACK 2026.
   - `POST /news/predict` — start the news prediction loop (409 if already running)
   - `DELETE /news/predict` — stop the news prediction loop (404 if not running)
   - Each cycle: fetches portfolio state from Supabase, loads news/portfolio/holdings CSVs, builds a prompt, calls Claude, validates the response, writes `trades/news_portfolio.csv`, and syncs results back to Supabase (holdings upserted, transactions logged, cash reserve updated)
-  - Guards per cycle: news tracking must be active, at least one ticker tracked, `trades/portfolio.csv` must exist, `ANTHROPIC_API_KEY` must be set
+  - Guards per cycle: news tracking must be active, at least one ticker tracked, `trades/portfolio.csv` must exist, user `"a"`'s API key must exist in the DB
   - **Relaxed cash floor** — Claude's response is accepted when CASH_RESERVE is between 4–5% of total capital (soft warning); hard rejection only below 4%
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn

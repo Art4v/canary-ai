@@ -24,7 +24,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from supabase import Client
 from anthropic import Anthropic
-from dotenv import load_dotenv
 
 from dependencies import get_supabase_client
 from schemas.response import success_response, error_response
@@ -48,16 +47,6 @@ from chatbot.advisor import (
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-
-# Load .env for ANTHROPIC_API_KEY
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-load_dotenv(os.path.join(_BACKEND_DIR, ".env"))
-
-# Initialise the Anthropic client once at module level
-_api_key = os.getenv("ANTHROPIC_API_KEY", "")
-_client: Anthropic | None = None
-if _api_key and _api_key != "your_anthropic_api_key_here":
-    _client = Anthropic(api_key=_api_key)
 
 # All routes are prefixed with /chat
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -279,19 +268,23 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
     JSONResponse
         ``{ "reply": str, "preferences_updated": dict, "memory_entry": str|null, "state": str }``
     """
-    # Guard: Anthropic client must be configured
-    if _client is None:
-        return JSONResponse(
-            status_code=503,
-            content=error_response(
-                "ANTHROPIC_API_KEY is not configured — add it to backend/.env"
-            ),
-        )
-
     # --- Load user data from DB ---
     user_data, err = crud_users.get_by_username(db, body.username)
     if err:
         return JSONResponse(status_code=404, content=error_response(err))
+
+    # Guard: the user must have a plaintext API key stored in the DB.
+    # Each user supplies their own Anthropic key — there is no shared key.
+    user_api_key = user_data.get("api_key")
+    if not user_api_key:
+        return JSONResponse(
+            status_code=403,
+            content=error_response(
+                "No Anthropic API key configured — add one in Settings"
+            ),
+        )
+    # Create a per-request Anthropic client using this user's key
+    client = Anthropic(api_key=user_api_key)
 
     # Parse preferences from the DB (JSONB column, may be None or a JSON string)
     db_preferences = user_data.get("preferences") or {}
@@ -435,7 +428,7 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
             portfolio_summary=portfolio_summary,
         )
         try:
-            response = _client.messages.create(
+            response = client.messages.create(
                 model=_MODEL, max_tokens=256,
                 system=system_prompt, messages=messages,
             )
@@ -473,7 +466,7 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
             portfolio_summary=portfolio_summary,
         )
         try:
-            response = _client.messages.create(
+            response = client.messages.create(
                 model=_MODEL, max_tokens=256,
                 system=system_prompt, messages=messages,
             )
@@ -507,7 +500,7 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
     # =================================================================
 
     # Extract preference fields from the user's latest message
-    extracted = extract_preferences(_client, messages, collected)
+    extracted = extract_preferences(client, messages, collected)
 
     # Handle stock removals
     stocks_to_remove = extracted.get("stocks_to_remove", []) if extracted else []
@@ -580,7 +573,7 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
             portfolio_summary=portfolio_summary,
         )
         try:
-            response = _client.messages.create(
+            response = client.messages.create(
                 model=_MODEL, max_tokens=256,
                 system=system_prompt, messages=messages,
             )
@@ -617,7 +610,7 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
         portfolio_summary=portfolio_summary,
     )
     try:
-        response = _client.messages.create(
+        response = client.messages.create(
             model=_MODEL, max_tokens=256,
             system=system_prompt, messages=messages,
         )

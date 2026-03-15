@@ -26,10 +26,12 @@ When writing or modifying code, add thorough inline comments:
 Reference schema for all four tables. **Do not run this SQL directly** — it is for context only.
 
 ```sql
--- Users — core account table; username and email are unique; api_key stores a bcrypt hash (nullable, exactly 60 chars)
+-- Users — core account table; username and email are unique; api_key stores a plaintext
+-- Anthropic API key (nullable) used for per-user Claude calls at runtime
 -- trading_style is a USER-DEFINED enum with values: balanced, risk_averse, risk-aggressive (nullable)
 -- memory stores the chatbot's persistent session memory as free-form text (nullable)
--- preferences stores the chatbot's collected investment preferences as JSONB (nullable)
+-- preferences stores the chatbot's collected investment preferences as text (nullable)
+-- notifications stores the user's notification preferences as text (nullable)
 CREATE TABLE public.users (
   user_id uuid NOT NULL DEFAULT gen_random_uuid(),
   username character varying NOT NULL UNIQUE,
@@ -38,11 +40,11 @@ CREATE TABLE public.users (
   api_key text DEFAULT NULL,
   trading_style USER-DEFINED DEFAULT NULL,
   memory text DEFAULT NULL,
-  preferences jsonb DEFAULT NULL,
+  preferences text DEFAULT NULL,
+  notifications text DEFAULT NULL,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT users_pkey PRIMARY KEY (user_id),
-  CONSTRAINT users_api_key_length CHECK (length(api_key) = 60)
+  CONSTRAINT users_pkey PRIMARY KEY (user_id)
 );
 
 -- Portfolios — one per user; tracks cash and capital totals

@@ -65,10 +65,8 @@ def create(db: Client, payload: dict) -> tuple[dict | None, str | None]:
         plaintext = payload.pop("password")
         payload["password_hash"] = _hash_password(plaintext)
 
-        # If an API key is provided, hash it with bcrypt before storage.
-        # The database stores only the hash — the plaintext key is never persisted.
-        if "api_key" in payload and payload["api_key"] is not None:
-            payload["api_key"] = _hash_password(payload["api_key"])
+        # API keys are stored as plaintext so they can be retrieved
+        # for per-user Anthropic API calls at runtime.
 
         response = db.table("users").insert(payload).execute()
         return response.data[0] if response.data else None, None
@@ -95,10 +93,8 @@ def update_by_username(db: Client, username: str, payload: dict) -> tuple[dict |
         plaintext = payload.pop("password")
         payload["password_hash"] = _hash_password(plaintext)
 
-    # If an API key is provided, hash it with bcrypt before storage.
-    # The database stores only the hash — the plaintext key is never persisted.
-    if "api_key" in payload and payload["api_key"] is not None:
-        payload["api_key"] = _hash_password(payload["api_key"])
+    # API keys are stored as plaintext so they can be retrieved
+    # for per-user Anthropic API calls at runtime.
 
     try:
         response = (
@@ -144,9 +140,23 @@ def authenticate(db: Client, email: str, password: str) -> tuple[dict | None, st
     if not verify_password(password, user.get("password_hash", "")):
         return None, "Invalid email or password"
 
-    # Remove password_hash from the response for security
-    user_safe = {k: v for k, v in user.items() if k != "password_hash"}
+    # Remove password_hash and api_key from the response for security —
+    # api_key is sensitive and should never be leaked in login responses.
+    user_safe = {k: v for k, v in user.items() if k not in ("password_hash", "api_key")}
     return user_safe, None
+
+
+def get_api_key_by_username(db: Client, username: str) -> tuple[str | None, str | None]:
+    """
+    Fetch only the api_key column for a given username.
+
+    Returns (api_key_string, None) on success, or (None, error_msg)
+    when the user is not found or has no key configured.
+    """
+    response = db.table("users").select("api_key").eq("username", username).execute()
+    if not response.data:
+        return None, f"User '{username}' not found"
+    return response.data[0].get("api_key"), None
 
 
 def delete_by_username(db: Client, username: str) -> tuple[dict | None, str | None]:
