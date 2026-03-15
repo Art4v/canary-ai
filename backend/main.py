@@ -1260,10 +1260,29 @@ app.include_router(chat_router.router)
 # the same {"success": false, "error": "..."} shape on bad input.
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Return validation errors in the standard error envelope."""
+    """Return validation errors in the standard error envelope.
+
+    Extracts the first human-readable ``msg`` from Pydantic's error list
+    so the frontend receives a clean string it can display directly,
+    matching the same ``{ success: false, error: "..." }`` shape used
+    by all other error paths (e.g. invalid credentials, not-found, etc.).
+    """
+    # Pydantic errors() returns a list of dicts, each with a "msg" key
+    # containing the human-readable validation message (e.g. "Email is required").
+    # We surface the first one since the frontend displays a single error string.
+    errors = exc.errors()
+    if errors:
+        # Pydantic prefixes custom messages with "Value error, " — strip it
+        # for a cleaner user-facing message.
+        first_msg = errors[0].get("msg", "Invalid input")
+        if first_msg.startswith("Value error, "):
+            first_msg = first_msg[len("Value error, "):]
+        msg = first_msg
+    else:
+        msg = "Invalid input"
     return JSONResponse(
         status_code=400,
-        content=error_response(str(exc.errors())),
+        content=error_response(msg),
     )
 
 

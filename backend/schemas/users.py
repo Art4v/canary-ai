@@ -6,13 +6,22 @@ where every field is optional (partial update).
 
 The ``trading_style`` field uses a string enum with three allowed values:
 ``balanced``, ``risk-averse``, and ``risk-aggressive``.
+
+Server-side validation mirrors the frontend HTML5 form constraints:
+  - ``required`` fields must be non-empty strings
+  - ``type="email"`` fields must contain a valid email format (user@domain)
 """
 
+import re
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
 # Allowed values for the trading_style column (Supabase USER-DEFINED enum).
 TRADING_STYLE_VALUES = {"balanced", "risk-averse", "risk-aggressive"}
+
+# Simple email regex matching the HTML5 <input type="email"> spec.
+# Checks for non-empty local part, an @ sign, and a domain with at least one dot.
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 class UserCreate(BaseModel):
@@ -24,6 +33,10 @@ class UserCreate(BaseModel):
 
     Optional fields (api_key, trading_style, notifications) can be set
     at registration time or updated later via PUT.
+
+    Validation mirrors frontend HTML5 form constraints:
+      - username, email, password are required (non-empty after stripping)
+      - email must match a basic email format (mirrors ``type="email"``)
     """
 
     username: str          # unique display name / login handle
@@ -44,6 +57,36 @@ class UserCreate(BaseModel):
             return v.strip()
         return v
 
+    @field_validator("username", mode="after")
+    @classmethod
+    def username_not_empty(cls, v: str) -> str:
+        """Mirrors the HTML ``required`` attribute — username cannot be blank."""
+        if not v:
+            raise ValueError("Username is required")
+        return v
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def email_valid(cls, v: str) -> str:
+        """Mirrors the HTML ``required`` + ``type="email"`` attributes.
+
+        Rejects empty strings and values that don't look like a valid email
+        (local@domain.tld).
+        """
+        if not v:
+            raise ValueError("Email is required")
+        if not _EMAIL_RE.match(v):
+            raise ValueError("Please enter a valid email address")
+        return v
+
+    @field_validator("password", mode="after")
+    @classmethod
+    def password_not_empty(cls, v: str) -> str:
+        """Mirrors the HTML ``required`` attribute — password cannot be blank."""
+        if not v:
+            raise ValueError("Password is required")
+        return v
+
     @field_validator("trading_style", mode="before")
     @classmethod
     def validate_trading_style(cls, v: str | None) -> str | None:
@@ -60,6 +103,10 @@ class UserLogin(BaseModel):
 
     Accepts an email and plaintext password — the CRUD layer
     verifies the password against the stored bcrypt hash.
+
+    Validation mirrors frontend HTML5 form constraints:
+      - email and password are required (non-empty after stripping)
+      - email must match a basic email format (mirrors ``type="email"``)
     """
 
     email: str       # the email address used during registration
@@ -71,6 +118,27 @@ class UserLogin(BaseModel):
         """Remove surrounding whitespace."""
         if isinstance(v, str):
             return v.strip()
+        return v
+
+    @field_validator("email", mode="after")
+    @classmethod
+    def email_valid(cls, v: str) -> str:
+        """Mirrors the HTML ``required`` + ``type="email"`` attributes.
+
+        Rejects empty strings and values that don't look like a valid email.
+        """
+        if not v:
+            raise ValueError("Email is required")
+        if not _EMAIL_RE.match(v):
+            raise ValueError("Please enter a valid email address")
+        return v
+
+    @field_validator("password", mode="after")
+    @classmethod
+    def password_not_empty(cls, v: str) -> str:
+        """Mirrors the HTML ``required`` attribute — password cannot be blank."""
+        if not v:
+            raise ValueError("Password is required")
         return v
 
 
