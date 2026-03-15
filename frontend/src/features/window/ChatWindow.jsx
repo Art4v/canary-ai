@@ -22,7 +22,7 @@ const GREETING_MESSAGE = {
  *
  * Layout (top to bottom):
  *   1. Scrollable message area — alternating bot/user speech bubbles with avatars
- *   2. Input bar — text field, new-conversation "+" button, and send "Enter" button
+ *   2. Input bar — text field, new-conversation "+" button, and send star-icon button
  *
  * On mount, shows a single greeting message from the bot.
  * User messages are sent to POST /chat with the logged-in username,
@@ -278,7 +278,7 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
           <img src={plusIcon} alt="New conversation" />
         </button>
 
-        {/* Send button — submits the current input; disabled while loading */}
+        {/* Send button — submits the current input using the star (plus) icon; disabled while loading */}
         <button
           className="chat-send-btn"
           onClick={handleSend}
@@ -286,7 +286,7 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
           title="Send"
           disabled={isLoading}
         >
-          Enter
+          <img src={plusIcon} alt="Send" />
         </button>
       </div>
     </Window>

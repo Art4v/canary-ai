@@ -8,6 +8,7 @@ import TradesWindow from './features/window/TradesWindow.jsx'
 import ChatWindow from './features/window/ChatWindow.jsx'
 import PortfolioWindow from './features/window/PortfolioWindow.jsx'
 import SettingsWindow from './features/window/SettingsWindow.jsx'
+import HelpWindow from './features/window/HelpWindow.jsx'
 import CornerLauncher from './components/CornerLauncher.jsx'
 import { SnapProvider } from './contexts/SnapContext.jsx'
 import SnapPreview from './components/SnapPreview.jsx'
@@ -222,6 +223,17 @@ function App() {
                 onFocus={() => bringToFront('settings')}
                 zIndex={getZIndex('settings')}
                 initialPosition={cascadeRef.current['settings']}
+              />
+            )}
+
+            {/* Help window — purple-themed step-by-step user guide */}
+            {openSections.has('help') && (
+              <HelpWindow
+                windowId="help"
+                onClose={() => closeSection('help')}
+                onFocus={() => bringToFront('help')}
+                zIndex={getZIndex('help')}
+                initialPosition={cascadeRef.current['help']}
               />
             )}
 

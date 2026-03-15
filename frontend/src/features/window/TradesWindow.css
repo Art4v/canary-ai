@@ -1,75 +1,116 @@
 /* ══════════════════════════════════════════
-   TradesWindow — Trades section inner content
+   TradesWindow — Transaction history & cash management
    ══════════════════════════════════════════ */
 
-/* ── Buy / Sell Toggle Row ──
-   Two equal-width buttons sitting side-by-side below the header.
-   Border uses the trades dark color for definition. */
-.trades-toggle {
-  display: flex;
-  border: 2px solid var(--color-trades-dark);
+/* ── Loading / Error status message ── */
+.trades-status {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-text);
+  font-size: var(--font-size-base);
 }
 
-/* ── Toggle Button (base) ──
-   Each button fills half the row. Inactive state uses the lighter shade. */
-.trades-toggle-btn {
-  flex: 1;
-  padding: var(--space-3) 0;
-  border: none;
-  background: var(--color-trades-light);
-  color: var(--color-trades-dark);
+/* Error variant — red tone */
+.trades-error {
+  color: var(--color-down, #e74c3c);
+}
+
+/* ── Portfolio Metrics Card ──
+   Horizontal flex row showing the three key portfolio numbers. */
+.trades-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  padding: var(--space-5) var(--space-6);
+  margin: var(--space-4);
+  gap: var(--space-4);
+}
+
+/* Each metric column stacks label above value */
+.trades-summary-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Small muted label above the metric value */
+.trades-label {
+  font-size: var(--font-size-sm);
+  color: var(--win-dark);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Large bold dollar amount — hero number */
+.trades-value {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+/* Smaller detail dollar amounts */
+.trades-detail {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  color: var(--color-text);
 }
 
-/* Divider between the two toggle buttons */
-.trades-toggle-btn + .trades-toggle-btn {
-  border-left: 2px solid var(--color-trades-dark);
+/* ── Deposit / Withdraw Section ──
+   Container for the cash management form. */
+.trades-cash-section {
+  padding: 0 var(--space-4) var(--space-4);
 }
 
-/* ── Active Toggle State ──
-   Active side gets the brighter primary color to stand out. */
-.trades-toggle-btn--active {
-  background: var(--color-trades-primary);
-}
-
-/* Hover on inactive button shows a subtle brightness bump */
-.trades-toggle-btn:hover:not(.trades-toggle-btn--active) {
-  filter: brightness(1.05);
-}
-
-/* ── Content Area ──
-   Flex-grows to fill all remaining vertical space between toggle and footer.
-   Uses a slightly muted green background matching the design mockup. */
-.trades-content {
-  flex: 1;
-  background: var(--color-trades-primary);
-  opacity: 0.6;
-}
-
-/* ── Footer ──
-   Bottom bar holding the execute order button, centered horizontally. */
-.trades-footer {
-  padding: var(--space-4);
-  background: var(--color-trades-light);
+/* Flex row: input + two action buttons side by side */
+.trades-cash-row {
   display: flex;
-  justify-content: center;
+  gap: var(--space-3);
+  align-items: center;
 }
 
-/* ── Execute Order Button ──
-   Puffy 3D style matching dock nav buttons.
-   Wide pill shape with embossed shadow for a cartoony, tactile feel. */
-.trades-execute-btn {
-  padding: var(--space-3) var(--space-8);
+/* Styled number input for dollar amount */
+.trades-cash-input {
+  flex: 1;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 2px solid var(--color-trades-dark);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+/* Focus ring on the input */
+.trades-cash-input:focus {
+  border-color: var(--color-trades-primary);
+}
+
+/* Hide number input spinner arrows */
+.trades-cash-input::-webkit-inner-spin-button,
+.trades-cash-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.trades-cash-input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* ── Action Buttons ──
+   Puffy 3D style matching dock button aesthetics.
+   Based on the original .trades-execute-btn design. */
+.trades-action-btn {
+  padding: var(--space-3) var(--space-6);
   border-radius: var(--radius-card);
   border: 3px solid var(--color-trades-dark);
   background: var(--color-surface);
   color: var(--color-trades-dark);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-bold);
   cursor: pointer;
+  white-space: nowrap;
   /* 3D puffy effect — bottom shadow + inner highlight */
   box-shadow:
     0 4px 0 var(--color-trades-dark),
@@ -78,7 +119,7 @@
 }
 
 /* Hover lifts the button and deepens the shadow */
-.trades-execute-btn:hover {
+.trades-action-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   filter: brightness(1.05);
   box-shadow:
@@ -87,9 +128,137 @@
 }
 
 /* Active press pushes the button down for tactile feedback */
-.trades-execute-btn:active {
+.trades-action-btn:active:not(:disabled) {
   transform: translateY(1px);
   box-shadow:
     0 2px 0 var(--color-trades-dark),
     inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* Deposit button — uses trades primary green tint */
+.trades-action-btn--deposit {
+  background: var(--color-trades-light);
+  color: var(--color-trades-dark);
+}
+
+/* Withdraw button — lighter surface with dark text */
+.trades-action-btn--withdraw {
+  background: var(--color-surface);
+  color: var(--color-trades-dark);
+}
+
+/* Disabled state — dimmed and non-interactive */
+.trades-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Inline Error Message ──
+   Small red text below the cash action row. */
+.trades-inline-error {
+  margin-top: var(--space-2);
+  padding: 0 var(--space-1);
+  color: var(--color-down, #e74c3c);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ── Transaction History Section ──
+   Scrollable container for the trades table. */
+.trades-history-section {
+  padding: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Section title above the table */
+.trades-section-title {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+}
+
+/* Empty state message */
+.trades-empty {
+  text-align: center;
+  padding: var(--space-6);
+  color: var(--color-text);
+  opacity: 0.6;
+  font-size: var(--font-size-base);
+}
+
+/* ── History Table ──
+   Full-width table matching the portfolio holdings table pattern. */
+.trades-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+/* Table header cells */
+.trades-history-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  color: var(--win-dark);
+  font-weight: var(--font-weight-bold);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Table body cells */
+.trades-history-table td {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Ticker column — bold and accented */
+.trades-ticker {
+  font-weight: var(--font-weight-bold);
+  color: var(--win-primary);
+}
+
+/* Date column — slightly muted */
+.trades-date {
+  opacity: 0.75;
+}
+
+/* ── Transaction Type Badges ──
+   Color-coded labels for buy/sell/hold. */
+.trades-tx-type {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xs, 0.75rem);
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Buy — green badge */
+.trades-tx-type--buy {
+  background: rgba(46, 204, 113, 0.2);
+  color: #2ecc71;
+}
+
+/* Sell — red badge */
+.trades-tx-type--sell {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+/* Hold — gray badge */
+.trades-tx-type--hold {
+  background: rgba(149, 165, 166, 0.2);
+  color: #95a5a6;
+}
+
+/* ── Footer Strip ──
+   Dark band at the very bottom of the window. */
+.trades-footer {
+  height: 48px;
+  background: var(--win-dark);
+  margin-top: var(--space-4);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
 }

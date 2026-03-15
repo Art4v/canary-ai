@@ -11,7 +11,7 @@ from supabase import Client
 
 from dependencies import get_supabase_client
 from schemas.response import success_response, error_response
-from schemas.portfolios import PortfolioCreate, PortfolioUpdate
+from schemas.portfolios import PortfolioCreate, PortfolioUpdate, PortfolioCashAction
 from crud import portfolios as crud_portfolios
 
 router = APIRouter(prefix="/database/portfolios", tags=["portfolios"])
@@ -60,6 +60,33 @@ def update_portfolio(username: str, body: PortfolioUpdate, db: Client = Depends(
     data, err = crud_portfolios.update_by_username(db, username, payload)
     if err:
         return JSONResponse(status_code=404, content=error_response(err))
+    return success_response(data)
+
+
+@router.post("/{username}/deposit")
+def deposit_cash(username: str, body: PortfolioCashAction, db: Client = Depends(get_supabase_client)):
+    """
+    Deposit cash into the portfolio belonging to *username*.
+
+    Increases cash_reserve and current_portfolio_value by the given amount.
+    """
+    data, err = crud_portfolios.deposit(db, username, body.amount)
+    if err:
+        return JSONResponse(status_code=400, content=error_response(err))
+    return success_response(data)
+
+
+@router.post("/{username}/withdraw")
+def withdraw_cash(username: str, body: PortfolioCashAction, db: Client = Depends(get_supabase_client)):
+    """
+    Withdraw cash from the portfolio belonging to *username*.
+
+    Decreases cash_reserve and current_portfolio_value by the given amount.
+    Returns 400 if the amount exceeds the available cash reserve.
+    """
+    data, err = crud_portfolios.withdraw(db, username, body.amount)
+    if err:
+        return JSONResponse(status_code=400, content=error_response(err))
     return success_response(data)
 
 

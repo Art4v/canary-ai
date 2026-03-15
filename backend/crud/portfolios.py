@@ -82,6 +82,50 @@ def update_by_username(db: Client, username: str, payload: dict) -> tuple[dict |
         return None, str(exc)
 
 
+def deposit(db: Client, username: str, amount: float) -> tuple[dict | None, str | None]:
+    """
+    Deposit cash into the user's portfolio.
+
+    Increases cash_reserve and current_portfolio_value by *amount*.
+    total_capital_invested stays unchanged (deposits are not stock investments).
+    """
+    portfolio, err = get_by_username(db, username)
+    if err:
+        return None, err
+
+    new_cash = float(portfolio["cash_reserve"]) + amount
+    new_value = float(portfolio["current_portfolio_value"]) + amount
+
+    return update_by_username(db, username, {
+        "cash_reserve": new_cash,
+        "current_portfolio_value": new_value,
+    })
+
+
+def withdraw(db: Client, username: str, amount: float) -> tuple[dict | None, str | None]:
+    """
+    Withdraw cash from the user's portfolio.
+
+    Decreases cash_reserve and current_portfolio_value by *amount*.
+    Returns an error if the withdrawal exceeds the available cash reserve.
+    """
+    portfolio, err = get_by_username(db, username)
+    if err:
+        return None, err
+
+    current_cash = float(portfolio["cash_reserve"])
+    if amount > current_cash:
+        return None, "Insufficient cash reserve"
+
+    new_cash = current_cash - amount
+    new_value = float(portfolio["current_portfolio_value"]) - amount
+
+    return update_by_username(db, username, {
+        "cash_reserve": new_cash,
+        "current_portfolio_value": new_value,
+    })
+
+
 def delete_by_username(db: Client, username: str) -> tuple[dict | None, str | None]:
     """
     Delete the portfolio belonging to *username*.

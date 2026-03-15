@@ -1,0 +1,116 @@
+/* ══════════════════════════════════════════════════
+   HelpWindow — Purple-themed help & user guide panel
+   ══════════════════════════════════════════════════ */
+
+/* ── Header Override ──
+   Override the generic Window header to use the help dark shade,
+   keeping the header visually distinct from the guide body. */
+.help-window-wrapper .window-header {
+  background: var(--color-help-dark);
+}
+
+/* ── Scrollable Content Area ──
+   Flex column that fills the window body, allowing the guide
+   text to scroll independently of the window chrome. */
+.help-content {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  overflow-y: auto;
+  flex: 1;
+  background: var(--color-help-primary);
+  gap: var(--space-3);
+}
+
+/* ── Intro Line ──
+   Italic welcome sentence at the very top of the guide.
+   Uses the dark help shade for contrast against the primary background. */
+.help-intro {
+  font-style: italic;
+  color: var(--color-help-dark);
+  font-size: var(--font-size-base);
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-help-light);
+  border-radius: var(--radius-card);
+}
+
+/* ── Guide Section ──
+   Each of the 8 topic sections gets its own visually separated card.
+   Bottom margin creates breathing room between sections. */
+.help-section {
+  background: var(--color-help-light);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+/* ── Section Heading ──
+   h3 uses the dark help shade and a bottom border to visually
+   separate the section title from its step list below. */
+.help-section h3 {
+  color: var(--color-help-dark);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 2px solid var(--color-help-dark);
+}
+
+/* ── Steps Ordered List ──
+   Remove default list padding; we'll style the step markers manually. */
+.help-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  counter-reset: help-step-counter;
+}
+
+/* ── Individual Step ──
+   Each step item uses CSS counters to show a pill-shaped number
+   badge (using the primary help colour) before the step text.
+   Flexbox keeps the badge and text vertically aligned. */
+.help-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-help-dark);
+  counter-increment: help-step-counter;
+}
+
+/* Step number pill — small rounded badge with primary background */
+.help-step::before {
+  content: counter(help-step-counter);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-help-dark);
+  color: var(--color-help-primary);
+  font-size: var(--font-size-xs, 11px);
+  font-weight: var(--font-weight-bold);
+  flex-shrink: 0;
+  /* Slight top offset so the badge aligns with the first line of text */
+  margin-top: 1px;
+}
+
+/* ── Keyboard shortcut styling ──
+   <kbd> tags inside steps get a subtle pill treatment to
+   visually distinguish key names from prose. */
+.help-step kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-help-dark);
+  background: var(--color-help-primary);
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs, 11px);
+  font-weight: var(--font-weight-bold);
+}

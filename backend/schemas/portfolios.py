@@ -32,3 +32,17 @@ class PortfolioUpdate(BaseModel):
     cash_reserve: Optional[float] = None
     total_capital_invested: Optional[float] = None
     current_portfolio_value: Optional[float] = None
+
+
+class PortfolioCashAction(BaseModel):
+    """Schema for deposit/withdraw cash actions. Amount must be positive."""
+
+    amount: float
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def must_be_positive(cls, v: float) -> float:
+        """Reject zero or negative amounts."""
+        if v <= 0:
+            raise ValueError("Amount must be greater than zero")
+        return v

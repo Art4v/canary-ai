@@ -70,6 +70,8 @@ A hackathon project built for UNIHACK 2026.
     - `GET /database/portfolios` — list all portfolios
     - `GET /database/portfolios/{username}` — get portfolio for a user
     - `POST /database/portfolios` — create a portfolio (`{"username", "cash_reserve", "total_capital_invested", "current_portfolio_value"}`)
+    - `POST /database/portfolios/{username}/deposit` — deposit cash into the portfolio (`{"amount"}`); increases cash_reserve and current_portfolio_value; amount must be positive
+    - `POST /database/portfolios/{username}/withdraw` — withdraw cash from the portfolio (`{"amount"}`); decreases cash_reserve and current_portfolio_value; returns 400 if amount exceeds available cash reserve
     - `PUT /database/portfolios/{username}` — update portfolio fields
     - `DELETE /database/portfolios/{username}` — delete a user's portfolio
   - **Holdings** (`/database/holdings`)
@@ -147,7 +149,8 @@ A hackathon project built for UNIHACK 2026.
 - **Corner Launchers** — two expandable quick-access menus in the bottom-left and bottom-right corners of the viewport; each features a 48px puffy trigger button (`+` icon that rotates to `×` on expand), 5 section-colored toggle buttons matching the Dock's navigation, and a "Clear All" action to close every open window; menu items animate in with staggered GSAP scale+fade, open windows show an outline ring, and both launchers work independently
 - **Draggable & resizable window system** — generic `Window` shell component in `features/window/` with `useDrag` and `useResize` hooks; supports 8-direction resize handles, viewport-clamped dragging via the header bar, GSAP pop-in animation, per-section color theming via CSS custom properties, and a `closeIcon` prop for per-window custom close button images
 - **PortfolioWindow** — live portfolio dashboard that fetches real data from Supabase; displays a summary card (total value, cash reserve, capital invested), interactive Recharts line charts for each tracked ticker showing price history, and a holdings table listing current positions (ticker, quantity, avg buy price, estimated value); empty states shown when no stocks are tracked or no holdings exist
-- **Trades window** — opened/closed by the Trades dock button; contains a Buy/Sell toggle, empty content area, and a puffy 3D "Execute Order" button; wraps the generic Window shell with trades color tokens and a custom close icon PNG
+- **Trades window** — opened/closed by the Trades dock button; displays a portfolio metrics card (total value, cash reserve, capital invested), deposit/withdraw cash management with inline validation errors, and a scrollable transaction history table showing past trades color-coded by type (buy=green, sell=red, hold=gray); wraps the generic Window shell with trades color tokens and a custom close icon PNG
+- **Help window** — opened/closed by the Help (?) dock button and corner launchers; displays an 8-section step-by-step user guide covering Getting Started, Desktop Navigation, Chat, Portfolio, Trades, Settings, Window Management, and Theme; purple-themed using `--color-help-*` tokens with pill-shaped step number badges; wraps the generic Window shell (`HelpWindow.jsx / .css`)
 - **Modular feature folders** — scaffolded directories for `dock`, `portfolio`, `sky`, and `window` features
 
 ## Project Structure
@@ -212,7 +215,8 @@ unihack-hackathon-submission/
 │   │   │       ├── TradesWindow.jsx / .css  # Trades section content
 │   │   │       ├── ChatWindow.jsx / .css    # AI chat interface
 │   │   │       ├── PortfolioWindow.jsx / .css # Portfolio overview
-│   │   │       └── SettingsWindow.jsx / .css # Settings panel (wired to backend via PUT /database/users)
+│   │   │       ├── SettingsWindow.jsx / .css # Settings panel (wired to backend via PUT /database/users)
+│   │   │       └── HelpWindow.jsx / .css   # 8-section user guide (purple-themed)
 │   │   ├── hooks/             # Custom React hooks
 │   │   │   ├── useTheme.jsx   # Theme management hook
 │   │   │   ├── useDrag.jsx    # Draggable position hook
