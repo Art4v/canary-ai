@@ -1,12 +1,11 @@
 {
   "stocks_to_keep": [
-    "AAPL",
     "NVDA"
   ],
-  "cash_reserve": 0.0,
-  "trading_style": "balanced",
+  "cash_reserve": 500000.0,
+  "trading_style": "risk-aggressive",
   "stock_preferences": [
     "tech"
   ],
-  "saved_at": "2026-03-15T11:48:20.112275"
+  "saved_at": "2026-03-15T11:53:31.961240"
 }

@@ -89,13 +89,14 @@ A hackathon project built for UNIHACK 2026.
   - **Referential stock extraction** — when the user refers to stocks mentioned by the assistant (e.g. "invest into all of these", "add those"), the extraction model resolves the reference from conversation context and extracts the correct tickers
   - **Immediate save for non-stock fields** — cash_reserve, trading_style, and stock_preferences are saved to `preferences.json` instantly with no confirmation needed
   - **Stock confirmation** — stocks require explicit yes/no before adding; uses word-boundary matching (regex `\b`) so "none" won't false-trigger a "no" decline; ambiguous replies get one clarification attempt, then the stock is dropped
+  - **Stock removal** — when the user asks to remove/drop/sell a stock (e.g. "remove AAPL"), the extraction model returns a `stocks_to_remove` field and the ticker is immediately removed from `stocks_to_keep` and persisted to `preferences.json`
   - **Declined stock tracking** — tickers that are declined or dropped during a session are remembered in a `declined_stocks` set and filtered out of future extraction results, preventing stale re-queuing from conversation context
   - Persistent memory via `memory.md` — logs every action (field saves, stock confirmations, stock declines, session-end context) with dated entries; loaded on startup so the advisor references prior context naturally
   - **Session-end memory** — on quit/exit/Ctrl+C, any pending stock discussions or queued tickers are logged to memory for continuity
   - Returning user support — loads `preferences.json` on startup to pre-populate fields; if all 4 fields are set, starts directly in ADVISING state
   - Edge cases: "none"/"no stocks" → empty list, "$0"/"zero" → 0.0, ambiguous trading style → asks to clarify, multiple fields in one message → all extracted
   - Commands: `quit`/`exit` exits, Ctrl+C exits cleanly
-  - API key loaded from `backend/chatbot/.env` (not committed); copy `.env.example` to `.env` and add your key
+  - API key loaded from the shared `backend/.env` file (not committed); add `ANTHROPIC_API_KEY=your_key` to `backend/.env`
   - Run: `cd backend/chatbot && python advisor.py`
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
@@ -158,9 +159,7 @@ unihack-hackathon-submission/
 │   ├── chatbot/                   # Preference collection chatbot
 │   │   ├── advisor.py             # Terminal chatbot — collects 4 investment preferences via casual conversation
 │   │   ├── preferences.json       # Saved preferences (auto-generated after user confirmation)
-│   │   ├── memory.md              # Persistent session memory log (auto-generated)
-│   │   ├── .env                   # API key (not committed — copy .env.example)
-│   │   └── .env.example           # Template for chatbot API key
+│   │   └── memory.md              # Persistent session memory log (auto-generated)
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── dependencies.py          # Supabase client init + FastAPI Depends

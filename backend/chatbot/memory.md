@@ -4,3 +4,6 @@
 - Trading style set to balanced
 - Stock preferences set to: tech
 - User confirmed adding NVDA to portfolio
+- User removed AAPL from portfolio
+- Trading style set to risk-aggressive
+- Cash reserve set to $500,000.00

@@ -43,9 +43,10 @@ from dotenv import load_dotenv
 # Constants
 # ---------------------------------------------------------------------------
 
-# Path to the .env file sitting next to this script
+# Directory containing this script (backend/chatbot/)
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_ENV_PATH = os.path.join(_SCRIPT_DIR, ".env")
+# Path to the shared .env in the backend/ directory (one level up)
+_ENV_PATH = os.path.join(_SCRIPT_DIR, "..", ".env")
 
 # Path to the preferences JSON written after user confirmation
 _PREFERENCES_PATH = os.path.join(_SCRIPT_DIR, "preferences.json")
@@ -276,6 +277,11 @@ Mappings: "aggressive"/"risky"/"yolo" → "risk-aggressive", \
 
 - "stock_preferences": list of preference strings (e.g. ["tech", "dividends", "blue chip"]). \
 Extract themes, sectors, or investment styles the user mentions.
+
+- "stocks_to_remove": list of uppercase ticker symbols the user wants to REMOVE from their \
+portfolio. Only set this when the user explicitly asks to remove, drop, or sell a stock \
+(e.g. "remove AAPL", "drop nvidia", "take TSLA off my list"). Do NOT set this for normal \
+stock mentions or additions.
 
 If nothing is extractable from the message, return exactly: {}
 
@@ -610,14 +616,14 @@ def main() -> None:
     5. Stock tickers are discussed one-by-one before committing
     6. Handle 'quit'/'exit' and Ctrl+C gracefully with session-end memory
     """
-    # --- Load API key from the .env next to this script ---
+    # --- Load API key from the shared backend/.env ---
     load_dotenv(_ENV_PATH)
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
 
     # Validate that a real key is present
-    if not api_key or api_key == "your_api_key_here":
+    if not api_key or api_key == "your_anthropic_api_key_here":
         print("ERROR: ANTHROPIC_API_KEY is not set or still has the placeholder value.")
-        print(f"Please edit {_ENV_PATH} and add your Anthropic API key.")
+        print(f"Please edit {os.path.abspath(_ENV_PATH)} and add your Anthropic API key.")
         print("Get a key at https://console.anthropic.com/")
         return
 
@@ -849,13 +855,28 @@ def main() -> None:
         # Extract preference fields from the user's latest message
         extracted = extract_preferences(client, messages, collected)
 
+        # Handle stock removals — if the user asked to remove tickers, do it immediately
+        stocks_to_remove = extracted.get("stocks_to_remove", []) if extracted else []
+        if isinstance(stocks_to_remove, list) and stocks_to_remove:
+            current_stocks = collected.get("stocks_to_keep") or []
+            for ticker in stocks_to_remove:
+                ticker = ticker.upper() if isinstance(ticker, str) else str(ticker)
+                if ticker in current_stocks:
+                    current_stocks.remove(ticker)
+                    print(f"  [✗ {ticker} removed from stocks_to_keep]")
+                    append_memory(f"User removed {ticker} from portfolio")
+            collected["stocks_to_keep"] = current_stocks
+            save_preferences(collected)
+            memory_content = load_memory()
+
         # Detect new tickers that need discussion before adding
         # Pass declined_stocks so previously declined tickers aren't re-queued
         new_tickers = _detect_new_tickers(extracted, collected, declined_stocks) if extracted else []
 
-        # Remove stocks_to_keep from extracted so validate_and_merge doesn't
+        # Remove stocks_to_keep and stocks_to_remove from extracted so validate_and_merge
+        # doesn't process them — stocks go through the discussion/removal flow instead
         # auto-add them — stocks go through the discussion flow instead
-        extracted_without_stocks = {k: v for k, v in extracted.items() if k != "stocks_to_keep"}
+        extracted_without_stocks = {k: v for k, v in extracted.items() if k not in ("stocks_to_keep", "stocks_to_remove")}
 
         # Validate and merge non-stock fields
         if extracted_without_stocks:
