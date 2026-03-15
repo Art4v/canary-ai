@@ -13,6 +13,7 @@ A hackathon project built for UNIHACK 2026.
 | Database | Supabase (supabase-py)      |
 | Data     | yfinance, Finnhub API       |
 | Icons    | Lucide React                |
+| Charts   | Recharts                    |
 | Animation| GSAP                        |
 | Async IO | aiofiles                    |
 | Auth     | bcrypt (server-side hashing)|
@@ -28,6 +29,7 @@ A hackathon project built for UNIHACK 2026.
   - `POST /track/{ticker}` — start tracking a ticker (409 if already tracked)
   - `DELETE /track/{ticker}` — stop tracking a ticker (404 if not tracked)
   - `GET /track` — list all currently tracked tickers
+- **Stock data endpoint** — `GET /stock-data/{ticker}` returns historical price data from the ticker's CSV file as a JSON array with fields: `timestamp`, `current_price`, `day_high`, `day_low`, `volume`, `market_cap`; returns 404 if the ticker has no data file
 - **CSV persistence** — each tracked ticker gets its own CSV file in `backend/data/stock_training_data/` with columns: `timestamp, ticker, current_price, day_high, day_low, volume, market_cap`
 - **General news tracking** — polls Finnhub for general market news every 60 seconds, deduplicates by article ID, and stores results in `backend/data/news/news.csv`
   - `POST /news` — start tracking news (409 if already tracking, 400 if API key missing)
@@ -122,6 +124,7 @@ A hackathon project built for UNIHACK 2026.
 - **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
 - **Corner Launchers** — two expandable quick-access menus in the bottom-left and bottom-right corners of the viewport; each features a 48px puffy trigger button (`+` icon that rotates to `×` on expand), 5 section-colored toggle buttons matching the Dock's navigation, and a "Clear All" action to close every open window; menu items animate in with staggered GSAP scale+fade, open windows show an outline ring, and both launchers work independently
 - **Draggable & resizable window system** — generic `Window` shell component in `features/window/` with `useDrag` and `useResize` hooks; supports 8-direction resize handles, viewport-clamped dragging via the header bar, GSAP pop-in animation, per-section color theming via CSS custom properties, and a `closeIcon` prop for per-window custom close button images
+- **PortfolioWindow** — live portfolio dashboard that fetches real data from Supabase; displays a summary card (total value, cash reserve, capital invested), interactive Recharts line charts for each tracked ticker showing price history, and a holdings table listing current positions (ticker, quantity, avg buy price, estimated value); empty states shown when no stocks are tracked or no holdings exist
 - **Trades window** — opened/closed by the Trades dock button; contains a Buy/Sell toggle, empty content area, and a puffy 3D "Execute Order" button; wraps the generic Window shell with trades color tokens and a custom close icon PNG
 - **Modular feature folders** — scaffolded directories for `dock`, `portfolio`, `sky`, and `window` features
 
