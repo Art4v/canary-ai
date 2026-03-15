@@ -21,6 +21,14 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      '/track': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/stock-data': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

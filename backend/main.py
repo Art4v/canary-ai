@@ -771,6 +771,48 @@ async def stop_tracking(ticker: str):
     return {"message": f"Stopped tracking {ticker}"}
 
 
+@app.get("/stock-data/{ticker}")
+async def get_stock_data(ticker: str):
+    """
+    Return historical price data for a ticker as JSON.
+
+    Reads the CSV file written by _track_ticker() and returns its rows
+    as a JSON array.  Returns 404 if the ticker has no CSV on disk.
+
+    Parameters
+    ----------
+    ticker : str
+        Stock ticker symbol (case-insensitive; normalised to uppercase).
+
+    Returns
+    -------
+    dict
+        ``{ "success": true, "ticker": "AAPL", "data": [ ... ] }``
+        where each element has: timestamp, current_price, day_high,
+        day_low, volume, market_cap.
+    """
+    ticker = ticker.upper()
+    csv_path = os.path.join(STOCK_DATA_DIR, f"{ticker}.csv")
+
+    if not os.path.isfile(csv_path):
+        raise HTTPException(status_code=404, detail=f"No data file found for {ticker}")
+
+    rows = []
+    with open(csv_path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append({
+                "timestamp": row.get("timestamp", ""),
+                "current_price": float(row.get("current_price", 0)),
+                "day_high": float(row.get("day_high", 0)),
+                "day_low": float(row.get("day_low", 0)),
+                "volume": float(row.get("volume", 0)),
+                "market_cap": row.get("market_cap", ""),
+            })
+
+    return {"success": True, "ticker": ticker, "data": rows}
+
+
 @app.get("/track")
 def list_tracked():
     """
