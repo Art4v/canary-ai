@@ -2,6 +2,10 @@
 
 A hackathon project built for UNIHACK 2026.
 
+## What is Canary AI?
+
+Canary AI is an AI-powered stock portfolio manager that tracks live market data, optimises allocations using Modern Portfolio Theory, and adjusts trades based on real-time news sentiment. Users interact through a conversational chatbot that collects investment preferences, while a playful bird-themed desktop UI lets them monitor their portfolio, review trades, and manage cash — all in one place.
+
 ## Tech Stack
 
 | Layer    | Technology                  |
