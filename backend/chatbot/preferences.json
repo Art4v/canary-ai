@@ -1,0 +1,11 @@
+{
+  "stocks_to_keep": [
+    "NVDA"
+  ],
+  "cash_reserve": 500000.0,
+  "trading_style": "risk-aggressive",
+  "stock_preferences": [
+    "tech"
+  ],
+  "saved_at": "2026-03-15T11:53:31.961240"
+}

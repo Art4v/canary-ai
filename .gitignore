@@ -1,3 +1,2 @@
-# Chatbot secrets and runtime data
-backend/chatbot/.env
+# Chatbot runtime data
 backend/chatbot/watchlist.csv
