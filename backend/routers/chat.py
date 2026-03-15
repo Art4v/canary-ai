@@ -16,6 +16,7 @@ Endpoints:
 
 import os
 import json
+import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
@@ -176,11 +177,86 @@ def _build_memory_entry(text: str, existing_memory: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Auto-tracking helpers — bridge chatbot stock confirmations to the
+# tracking / prediction systems defined in main.py.  Uses lazy imports
+# (``import main`` inside function bodies) to avoid circular imports,
+# since main.py imports this router at module level.
+# ---------------------------------------------------------------------------
+
+
+async def _auto_track_and_predict(ticker: str) -> None:
+    """
+    Start tracking *ticker* and ensure prediction / news loops are running.
+
+    Called when the chatbot confirms a stock.  Idempotent — if the ticker
+    is already tracked or loops are already running, this is a no-op for
+    those items.
+
+    Parameters
+    ----------
+    ticker : str
+        Stock ticker symbol (will be uppercased).
+    """
+    import main  # lazy import to avoid circular dependency
+
+    ticker = ticker.upper()
+
+    # Start tracking this ticker if not already active
+    if ticker not in main.stock_tasks:
+        task = asyncio.create_task(main._track_ticker(ticker))
+        main.stock_tasks[ticker] = task
+
+    # Start the C++ efficient-frontier prediction loop if not running
+    if main.prediction_task is None or main.prediction_task.done():
+        main.prediction_task = asyncio.create_task(main._run_prediction_loop())
+
+    # Start Finnhub news tracking if not running (required by news prediction)
+    if main.news_task is None or main.news_task.done():
+        finnhub_key = os.getenv("FINNHUB_API_KEY")
+        if finnhub_key:
+            main.news_task = asyncio.create_task(main._track_news())
+
+    # Start the news-sentiment prediction loop if not running
+    if main.news_prediction_task is None or main.news_prediction_task.done():
+        main.news_prediction_task = asyncio.create_task(main._run_news_prediction_loop())
+
+
+async def _auto_untrack_and_maybe_stop(ticker: str) -> None:
+    """
+    Stop tracking *ticker*.  If no tickers remain, stop prediction loops.
+
+    Called when the chatbot removes a stock from the user's portfolio.
+
+    Parameters
+    ----------
+    ticker : str
+        Stock ticker symbol (will be uppercased).
+    """
+    import main  # lazy import to avoid circular dependency
+
+    ticker = ticker.upper()
+
+    # Cancel the tracking task for this ticker
+    task = main.stock_tasks.pop(ticker, None)
+    if task:
+        task.cancel()
+
+    # If no tickers remain, shut down prediction and news-prediction loops
+    if not main.stock_tasks:
+        if main.prediction_task is not None:
+            main.prediction_task.cancel()
+            main.prediction_task = None
+        if main.news_prediction_task is not None:
+            main.news_prediction_task.cancel()
+            main.news_prediction_task = None
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 @router.post("")
-def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
+async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
     """
     Process a single chat message and return the advisor's reply.
 
@@ -289,6 +365,13 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
                 collected["stocks_to_keep"].append(pending_stock)
 
             preferences_updated[f"stocks_to_keep (+{pending_stock})"] = collected["stocks_to_keep"]
+
+            # Auto-start tracking and prediction for the confirmed stock
+            try:
+                await _auto_track_and_predict(pending_stock)
+            except Exception as exc:
+                print(f"[Chat] WARNING: auto-track failed for {pending_stock}: {exc}", flush=True)
+
             memory_entry = f"User confirmed adding {pending_stock} to portfolio"
             memory_content = _build_memory_entry(memory_entry, memory_content)
 
@@ -434,6 +517,13 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
             ticker = ticker.upper() if isinstance(ticker, str) else str(ticker)
             if ticker in current_stocks:
                 current_stocks.remove(ticker)
+
+                # Auto-stop tracking for the removed stock; stop loops if none remain
+                try:
+                    await _auto_untrack_and_maybe_stop(ticker)
+                except Exception as exc:
+                    print(f"[Chat] WARNING: auto-untrack failed for {ticker}: {exc}", flush=True)
+
                 preferences_updated[f"stocks_to_keep (-{ticker})"] = current_stocks
                 entry = f"User removed {ticker} from portfolio"
                 memory_content = _build_memory_entry(entry, memory_content)
