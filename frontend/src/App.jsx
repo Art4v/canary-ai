@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { useAuth } from './contexts/AuthContext.jsx'
 import SkyBackground from './features/sky/SkyBackground.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
 import Dock from './features/dock/Dock.jsx'
@@ -32,6 +33,9 @@ const CASCADE_OFFSET = 30
  * @returns {JSX.Element}
  */
 function App() {
+  /* Auth context — used to guard the dashboard route */
+  const { user } = useAuth()
+
   /* Set of currently open section keys (e.g. "trades", "chats") */
   const [openSections, setOpenSections] = useState(new Set())
 
@@ -136,8 +140,10 @@ function App() {
       <Route path="/register" element={<RegisterPage />} />
 
       {/* ── Dashboard Route (default) ──
+          Guarded: redirects to /login if the user is not authenticated.
           Contains the full desktop environment: sky, dock, windows, etc. */}
       <Route path="/" element={
+        !user ? <Navigate to="/login" replace /> :
         <>
           <SkyBackground />
           <ThemeToggle />

@@ -26,15 +26,17 @@ When writing or modifying code, add thorough inline comments:
 Reference schema for all four tables. **Do not run this SQL directly** — it is for context only.
 
 ```sql
--- Users — core account table; username and email are unique
+-- Users — core account table; username and email are unique; api_key stores a bcrypt hash (nullable, exactly 60 chars)
 CREATE TABLE public.users (
   user_id uuid NOT NULL DEFAULT gen_random_uuid(),
   username character varying NOT NULL UNIQUE,
   email character varying NOT NULL UNIQUE,
   password_hash text NOT NULL,
+  api_key text DEFAULT NULL,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT users_pkey PRIMARY KEY (user_id)
+  CONSTRAINT users_pkey PRIMARY KEY (user_id),
+  CONSTRAINT users_api_key_length CHECK (length(api_key) = 60)
 );
 
 -- Portfolios — one per user; tracks cash and capital totals

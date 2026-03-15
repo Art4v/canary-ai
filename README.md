@@ -61,7 +61,7 @@ A hackathon project built for UNIHACK 2026.
     - `GET /database/users/{username}` — get a single user
     - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage
     - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash and returns user data on success
-    - `PUT /database/users/{username}` — update user fields (all optional)
+    - `PUT /database/users/{username}` — update user fields (all optional: `username`, `email`, `password`, `api_key`, `trading_style`, `notifications`)
     - `DELETE /database/users/{username}` — delete a user
   - **Portfolios** (`/database/portfolios`)
     - `GET /database/portfolios` — list all portfolios
@@ -102,7 +102,8 @@ A hackathon project built for UNIHACK 2026.
 
 ### Frontend
 
-- **Login & Register pages** — separate routes (`/dashboard/login`, `/dashboard/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`; loading states disable the submit button during requests; server errors are displayed inline
+- **Authentication context** — `AuthProvider` wraps the app to supply `user`, `login()`, `logout()`, and `updateUser()` via React context; persists the logged-in user object to `localStorage` so sessions survive page reloads; the dashboard route is guarded with a `<Navigate>` redirect to `/login` when no user is authenticated
+- **Login & Register pages** — separate routes (`/dashboard/login`, `/dashboard/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`, then stores the returned user data in `AuthContext`; loading states disable the submit button during requests; server errors are displayed inline
 - **Theme system** — three modes: `auto`, `night`, and `day`
   - Auto mode cycles based on AEST time (day between 10:00–16:00, night otherwise) and re-evaluates every 60 seconds
   - Managed by `useTheme` hook and `ThemeProvider` context
@@ -172,7 +173,7 @@ unihack-hackathon-submission/
 │   │   │   ├── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
 │   │   │   └── trades/        # Trades section images (close.png, etc.)
 │   │   ├── components/        # Reusable UI components (GlassCard, CornerLauncher, SnapPreview, SnapSeams)
-│   │   ├── contexts/          # React contexts (SnapContext)
+│   │   ├── contexts/          # React contexts (AuthContext, SnapContext)
 │   │   ├── data/              # Data files
 │   │   ├── features/          # Feature modules
 │   │   │   ├── dock/          # Cloud-shaped navigation dock (Dock.jsx, Dock.css)
@@ -183,7 +184,7 @@ unihack-hackathon-submission/
 │   │   │       ├── TradesWindow.jsx / .css  # Trades section content
 │   │   │       ├── ChatWindow.jsx / .css    # AI chat interface
 │   │   │       ├── PortfolioWindow.jsx / .css # Portfolio overview
-│   │   │       └── SettingsWindow.jsx / .css # Settings panel (Username, API Key, Email, Password, Trading Style, Notifications)
+│   │   │       └── SettingsWindow.jsx / .css # Settings panel (wired to backend via PUT /database/users)
 │   │   ├── hooks/             # Custom React hooks
 │   │   │   ├── useTheme.jsx   # Theme management hook
 │   │   │   ├── useDrag.jsx    # Draggable position hook
