@@ -84,7 +84,7 @@ function LoginPage() {
       if (result.success) {
         /* Login succeeded — persist user data in AuthContext and redirect */
         login(result.data)
-        navigate('/')
+        navigate('/app')
       } else {
         /* Show the server-provided error (e.g. invalid credentials) */
         setError(result.error || 'Login failed. Please try again.')

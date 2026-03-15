@@ -15,6 +15,8 @@ import SnapSeams from './components/SnapSeams.jsx'
 import SnapLayoutBar from './components/SnapLayoutBar.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
+import LandingPage from './pages/LandingPage.jsx'
+import CreditsPage from './pages/CreditsPage.jsx'
 
 /** Cascade offset (px) — each newly opened window shifts by this amount */
 const CASCADE_OFFSET = 30
@@ -135,15 +137,22 @@ function App() {
 
   return (
     <Routes>
+      {/* ── Landing Page (default route) ──
+          Entry point with the tree scene, nest, and clickable eggs */}
+      <Route path="/" element={<LandingPage />} />
+
       {/* ── Auth Routes ── */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* ── Dashboard Route (default) ──
-          Guarded: redirects to /login if the user is not authenticated.
+      {/* ── Credits Route ── */}
+      <Route path="/credits" element={<CreditsPage />} />
+
+      {/* ── Dashboard App Route ──
+          Guarded: redirects to / (landing) if the user is not authenticated.
           Contains the full desktop environment: sky, dock, windows, etc. */}
-      <Route path="/" element={
-        !user ? <Navigate to="/login" replace /> :
+      <Route path="/app" element={
+        !user ? <Navigate to="/" replace /> :
         <>
           <SkyBackground />
           <ThemeToggle />

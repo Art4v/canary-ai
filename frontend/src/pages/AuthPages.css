@@ -216,3 +216,66 @@
   margin: 0;
   font-family: var(--font-family);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   Credits Page — additional styles for the credits card content
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Credits List ──
+   Vertical stack of team member entries with dividers */
+.credits-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+/* ── Individual Credit Item ──
+   Row with name and role, separated by space-between */
+.credits-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border);
+}
+
+/* Team member name — bold primary text */
+.credits-name {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
+/* Team member role — muted secondary text */
+.credits-role {
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+}
+
+/* ── Attribution Footer ──
+   Centered text below the team list */
+.credits-attribution {
+  text-align: center;
+}
+
+/* "Built for UNIHACK 2026" line */
+.credits-built {
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  margin: 0 0 var(--space-1) 0;
+}
+
+/* "Powered by..." line */
+.credits-powered {
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}

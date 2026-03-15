@@ -1,0 +1,324 @@
+/* ══════════════════════════════════════════════════════════════
+   LandingPage — vertically scrollable tree scene
+   Three sections: Nest (top) → Tree trunk (middle) → Base (bottom)
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Page Container ──
+   Full-width scrollable column layout. The sky background sits
+   behind all content via SkyBackground's fixed positioning. */
+.landing-page {
+  /* Fixed positioning makes this its own scroll container,
+     bypassing the body's overflow:hidden from base.css */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;    /* enable vertical scrolling */
+  overflow-x: hidden;
+  z-index: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Section A: Sky + Nest
+   Full viewport height, centers the title and nest composite.
+   ══════════════════════════════════════════════════════════════ */
+.landing-nest-section {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  padding-top: 40px;
+}
+
+/* ── App Title ──
+   Large decorative title at the top of the nest section */
+.landing-title {
+  position: relative;
+  z-index: 10;
+  font-family: var(--font-family);
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  text-align: center;
+  margin: 0 0 20px 0;
+  /* Subtle text shadow for readability over sky */
+  text-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    0 0 40px rgba(255, 255, 255, 0.1);
+  letter-spacing: 2px;
+}
+
+/* ── Nest Container ──
+   Relatively positioned wrapper for the single composite image
+   and invisible egg hover zones. Width is clamped for responsiveness. */
+.landing-nest-container {
+  position: relative;
+  width: clamp(320px, 70vw, 700px);
+  /* Aspect ratio matches the eggs.png composite dimensions (2360 × 1640) */
+  aspect-ratio: 2360 / 1640;
+  z-index: 5;
+}
+
+/* ── Single Nest Composite Image ──
+   Replaces the previous multi-layered nest assembly.
+   Contains the full nest scene with leaves, twigs, and eggs. */
+.nest-composite {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Egg Buttons
+   Three invisible clickable zones positioned over the eggs in the
+   composite image. On hover, the cracked canary overlay appears.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Base Egg Button ──
+   Absolutely positioned within the nest container.
+   No background or border — invisible hit zone over the composite egg. */
+.egg-btn {
+  position: absolute;
+  z-index: 2;   /* Above the composite image (z-index: 1) */
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* Size each egg button as an invisible hover zone */
+  width: 18%;
+  height: 35%;
+  transition: transform 0.2s ease;
+}
+
+/* ── Egg Positioning ──
+   Each invisible button is placed over the corresponding egg
+   in the composite image. Coordinates are percentages of the container. */
+.egg-login   { left: 19%; top: 16%; }
+.egg-signup  { left: 37%; top: 8%; }
+.egg-credits { left: 55%; top: 16%; }
+
+/* ── Cracked Egg Overlay ──
+   Hidden by default, shown on hover. Contains the bottom shell,
+   canary, top shell, and text label stacked vertically. */
+.egg-cracked {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+/* Cracked egg images */
+.egg-cracked img {
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+/* Bottom half of cracked shell — sits at the base */
+.crack-bottom {
+  position: relative;
+  z-index: 1;
+}
+
+/* Canary popping out of the shell */
+.crack-canary {
+  position: relative;
+  z-index: 2;
+  /* Pull canary up so it overlaps the bottom shell */
+  margin-top: -60%;
+}
+
+/* Top half of cracked shell — sits on canary's head.
+   scaleX(-1) mirrors horizontally so the shell opening faces left,
+   sitting on the canary's head like a hat. */
+.crack-top {
+  position: relative;
+  z-index: 3;
+  width: 70% !important;
+  margin-top: -45%;
+  transform: scaleX(-1);
+}
+
+/* Text label below the cracked egg */
+.egg-label {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-family);
+  font-size: clamp(0.7rem, 1.5vw, 1rem);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+
+/* ── Hover Effect ──
+   On hover: show the cracked overlay and add a slight upward bounce. */
+.egg-btn:hover {
+  transform: translateY(-8px);
+}
+
+.egg-btn:hover .egg-cracked {
+  opacity: 1;
+}
+
+/* Active press effect */
+.egg-btn:active {
+  transform: translateY(-4px) scale(0.96);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Section B: Tree Trunk
+   Seamlessly repeating bark texture creating a tall tree.
+   z-index: 0 places trunk behind the nest for visual overlap.
+   ══════════════════════════════════════════════════════════════ */
+.landing-trunk-section {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  z-index: 0;   /* Behind nest section (z-index: 1) so trunk tucks under nest */
+  /* Large negative margin pulls trunk up behind the nest for seamless connection */
+  margin-top: -200px;
+}
+
+/* ── Trunk Column ──
+   Fixed-width div with vertically repeating bark texture.
+   Tall height (900px) creates a convincing tree between nest and base. */
+.landing-trunk {
+  width: clamp(200px, 35vw, 360px);
+  height: 900px;
+  background-repeat: repeat-y;
+  background-size: 100% auto;
+  background-position: center top;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Section C: Tree Base + Grass
+   Full-width grass using repeat-x tiling over a green background
+   so the grass fills to both screen edges.
+   ══════════════════════════════════════════════════════════════ */
+.landing-base-section {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1;
+  /* Pull base up to overlap with trunk for seamless transition */
+  margin-top: -10px;
+  padding-bottom: 60px;
+  /* Green background fills any gaps beyond the tiled grass image */
+  background-color: #2d5a1b;
+}
+
+/* ── Full-Width Grass ──
+   Tiles tree_bottom.png horizontally across the entire viewport.
+   mix-blend-mode: screen blends the PNG's black background areas
+   with the dark green section background. */
+.landing-base-grass {
+  width: 100%;
+  height: clamp(200px, 30vw, 400px);
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  background-position: center top;
+  /* Blend black areas in the PNG with the green background */
+  mix-blend-mode: screen;
+}
+
+/* ── Bottom Action Buttons ──
+   Two puffy 3D buttons below the tree base, matching auth page style */
+.landing-bottom-buttons {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: 30px;
+  z-index: 10;
+}
+
+/* ── Puffy 3D Button ──
+   Shared base style for Login and Register buttons at the bottom */
+.landing-btn {
+  padding: var(--space-3) var(--space-8);
+  border-radius: var(--radius-card);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+  min-width: 140px;
+  text-align: center;
+}
+
+/* Login button — accent blue, matching auth submit style */
+.landing-btn-login {
+  background: var(--color-accent);
+  color: #ffffff;
+  border: 3px solid #3a58c7;
+  box-shadow:
+    0 4px 0 #3a58c7,
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
+
+/* Register button — surface color with border for secondary action */
+.landing-btn-register {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 3px solid var(--color-border);
+  box-shadow:
+    0 4px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+}
+
+/* ── Button Hover ── */
+.landing-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+.landing-btn-login:hover {
+  box-shadow:
+    0 6px 0 #3a58c7,
+    inset 0 2px 6px rgba(255, 255, 255, 0.4);
+}
+
+.landing-btn-register:hover {
+  box-shadow:
+    0 6px 0 var(--color-border),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* ── Button Active ── */
+.landing-btn:active {
+  transform: translateY(1px);
+}
+
+.landing-btn-login:active {
+  box-shadow:
+    0 2px 0 #3a58c7,
+    inset 0 2px 4px rgba(255, 255, 255, 0.2);
+}
+
+.landing-btn-register:active {
+  box-shadow:
+    0 2px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}
