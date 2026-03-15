@@ -63,8 +63,8 @@ A hackathon project built for UNIHACK 2026.
   - **Users** (`/database/users`)
     - `GET /database/users` — list all users
     - `GET /database/users/{username}` — get a single user
-    - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage; automatically creates a zeroed-out portfolio row (`cash_reserve: 0`, `total_capital_invested: 0`, `current_portfolio_value: 0`) so every new user has a portfolio from the start
-    - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash; on success creates a server-side session and returns `{"user": <user_data>, "token": <session_token>}`
+    - `POST /database/users` — create a user (`{"username", "email", "password"}`); server-side validation mirrors frontend HTML5 form constraints: username, email, and password must be non-empty after whitespace stripping, and email must match a valid format (`user@domain.tld`); the plaintext password is hashed server-side with bcrypt before storage; automatically creates a zeroed-out portfolio row (`cash_reserve: 0`, `total_capital_invested: 0`, `current_portfolio_value: 0`) so every new user has a portfolio from the start
+    - `POST /database/users/login` — verify credentials (`{"email", "password"}`); server-side validation mirrors frontend HTML5 form constraints: email must be non-empty and valid format, password must be non-empty; checks the plaintext password against the stored bcrypt hash; on success creates a server-side session and returns `{"user": <user_data>, "token": <session_token>}`; validation errors return the same `{"success": false, "error": "..."}` envelope with clean user-facing messages
     - `POST /database/users/logout` — invalidate the caller's session token; reads the `Authorization: Bearer <token>` header and removes the session from the in-memory store; does not require `get_current_user` dependency so expired tokens can still be explicitly deleted; always returns success
     - `PUT /database/users/{username}` — update user fields (all optional: `username`, `email`, `password`, `api_key`, `trading_style`, `notifications`); **requires auth**
     - `DELETE /database/users/{username}` — delete a user
@@ -175,7 +175,7 @@ unihack-hackathon-submission/
 │   │   └── transactions.py      # /database/transactions endpoints
 │   ├── schemas/                 # Pydantic request/response schemas
 │   │   ├── response.py          # success_response / error_response helpers
-│   │   ├── users.py             # UserCreate, UserUpdate
+│   │   ├── users.py             # UserCreate, UserLogin, UserUpdate
 │   │   ├── portfolios.py        # PortfolioCreate, PortfolioUpdate
 │   │   ├── holdings.py          # HoldingCreate, HoldingUpdate
 │   │   └── transactions.py      # TransactionCreate, TransactionUpdate, TxType enum
