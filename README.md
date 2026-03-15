@@ -127,8 +127,10 @@ A hackathon project built for UNIHACK 2026.
 
 ### Frontend
 
+- **Landing page** — full-page vertically scrollable tree scene (`/`); top section shows "Canary AI" title and a nest composite image with 3 invisible egg hover zones that reveal cracked canary overlays on hover (Login, Sign Up, Credits) with labels above the top shell piece; middle section is a seamlessly repeating bark texture trunk; bottom section uses pure CSS grass (5-layer SVG bumps tiling horizontally for added depth) with individual grass blade SVGs poking above the section edge for a natural non-flat transition, over a radial-gradient green ground (lighter center, darker edges) with scattered inline SVG flowers (white & pink petals) and rocks for a cartoony nature-scene feel, plus Login/Register buttons; GSAP entrance animations on title, nest, and buttons
 - **Authentication context** — `AuthProvider` wraps the app to supply `user`, `login()`, `logout()`, and `updateUser()` via React context; persists the logged-in user object to `localStorage` so sessions survive page reloads; the dashboard route is guarded with a `<Navigate>` redirect to `/login` when no user is authenticated
 - **Login & Register pages** — separate routes (`/dashboard/login`, `/dashboard/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`, then stores the returned user data in `AuthContext`; loading states disable the submit button during requests; server errors are displayed inline
+- **Credits page** — glassmorphic card at `/credits` listing the team grouped by role (Frontend, Backend, Artwork) plus a full tech stack table (React, FastAPI, C++17, Supabase, GSAP, Recharts, Anthropic SDK, etc.); back button returns to the landing page; GSAP pop-in animation; scrollable if viewport is short
 - **Theme system** — three modes: `auto`, `night`, and `day`
   - Auto mode cycles based on AEST time (day between 10:00–16:00, night otherwise) and re-evaluates every 60 seconds
   - Managed by `useTheme` hook and `ThemeProvider` context
@@ -221,6 +223,8 @@ unihack-hackathon-submission/
 │   │   │   └── useResize.jsx  # Resizable dimensions hook
 │   │   ├── pages/             # Route-level page components
 │   │   │   ├── AuthPages.css  # Shared auth page styles (glassmorphic card, puffy inputs)
+│   │   │   ├── LandingPage.jsx # Landing page — tree scene with nest, eggs, trunk, and grass
+│   │   │   ├── LandingPage.css # Landing page styles (nest, egg buttons, trunk, grass base)
 │   │   │   ├── LoginPage.jsx  # Login form page (/login)
 │   │   │   └── RegisterPage.jsx # Register form page (/register)
 │   │   ├── styles/            # Global styles (base.css, tokens.css)

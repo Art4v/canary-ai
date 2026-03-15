@@ -6,14 +6,13 @@ import SkyBackground from '../features/sky/SkyBackground.jsx'
 import './AuthPages.css'
 
 /**
- * CreditsPage — simple credits/attribution page rendered over the animated
- * sky background. Uses the same glassmorphic card pattern as Login/Register.
+ * CreditsPage — credits/attribution page rendered over the animated sky
+ * background. Uses the same glassmorphic card pattern as Login/Register.
  *
- * Features:
- *   - SkyBackground behind everything
- *   - Puffy 3D back button (top-left) to return to the landing page
- *   - Glassmorphic card listing team members and attributions
- *   - GSAP pop-in card animation
+ * Sections:
+ *   1. Team credits grouped by role (Frontend, Backend, Artwork)
+ *   2. Tech stack listing all major technologies used
+ *   3. Back button (top-left arrow) to return to the landing page
  *
  * @returns {JSX.Element}
  */
@@ -52,30 +51,81 @@ function CreditsPage() {
         <ArrowLeft size={20} />
       </button>
 
-      {/* Centered glassmorphic credits card */}
-      <div className="auth-card" ref={cardRef}>
+      {/* Centered glassmorphic credits card — wider to fit tech stack table */}
+      <div className="auth-card credits-card" ref={cardRef}>
         <h1>Credits</h1>
 
-        {/* Team members list */}
+        {/* ── Team credits grouped by role ── */}
         <div className="credits-list">
+          {/* Frontend section header */}
+          <h2 className="credits-section-heading">Frontend</h2>
           <div className="credits-item">
             <span className="credits-name">Ken Nguyen</span>
-            <span className="credits-role">Frontend & Backend</span>
           </div>
           <div className="credits-item">
-            <span className="credits-name">Arthur Vasilev</span>
-            <span className="credits-role">Frontend & Design</span>
+            <span className="credits-name">Sai Prakhya</span>
+          </div>
+
+          {/* Backend section header */}
+          <h2 className="credits-section-heading">Backend</h2>
+          <div className="credits-item">
+            <span className="credits-name">Aarav Bhatt</span>
           </div>
           <div className="credits-item">
-            <span className="credits-name">Sean Yang</span>
-            <span className="credits-role">Backend & C++ Prediction</span>
+            <span className="credits-name">Advik Sakhare</span>
+          </div>
+
+          {/* Artwork section header */}
+          <h2 className="credits-section-heading">Artwork</h2>
+          <div className="credits-item">
+            <span className="credits-name">Helena Han</span>
           </div>
         </div>
 
-        {/* Attribution section */}
+        {/* ── Tech Stack ── */}
+        <h2 className="credits-section-heading">Tech Stack</h2>
+        <div className="credits-tech-stack">
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Frontend</span>
+            <span className="credits-tech-value">React 19 + Vite 8</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Routing</span>
+            <span className="credits-tech-value">React Router DOM</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Backend</span>
+            <span className="credits-tech-value">FastAPI + Uvicorn</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Prediction</span>
+            <span className="credits-tech-value">C++17</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Database</span>
+            <span className="credits-tech-value">Supabase</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Data</span>
+            <span className="credits-tech-value">yfinance, Finnhub API</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Animation</span>
+            <span className="credits-tech-value">GSAP</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">Charts</span>
+            <span className="credits-tech-value">Recharts</span>
+          </div>
+          <div className="credits-tech-row">
+            <span className="credits-tech-label">AI</span>
+            <span className="credits-tech-value">Anthropic SDK (Claude)</span>
+          </div>
+        </div>
+
+        {/* ── Attribution footer ── */}
         <div className="credits-attribution">
           <p className="credits-built">Built for UNIHACK 2026</p>
-          <p className="credits-powered">Powered by Claude AI, React, FastAPI & Supabase</p>
         </div>
       </div>
     </div>

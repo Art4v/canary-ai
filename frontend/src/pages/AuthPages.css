@@ -221,20 +221,44 @@
    Credits Page — additional styles for the credits card content
    ══════════════════════════════════════════════════════════════ */
 
+/* ── Credits Card Override ──
+   Wider than the default auth-card and scrollable if viewport is short */
+.credits-card {
+  width: 460px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+/* ── Credits Section Heading ──
+   Small uppercase heading for each role group (Frontend, Backend, etc.) */
+.credits-section-heading {
+  color: var(--color-text-muted);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: var(--space-4) 0 var(--space-2) 0;
+}
+
+/* Remove top margin on the very first heading so it sits right below the title */
+.credits-list .credits-section-heading:first-child {
+  margin-top: 0;
+}
+
 /* ── Credits List ──
-   Vertical stack of team member entries with dividers */
+   Vertical stack of team member entries grouped by section headings */
 .credits-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  margin-bottom: var(--space-6);
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
 }
 
 /* ── Individual Credit Item ──
-   Row with name and role, separated by space-between */
+   Row displaying a team member's name */
 .credits-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-card);
@@ -250,15 +274,47 @@
   font-size: var(--font-size-base);
 }
 
-/* Team member role — muted secondary text */
-.credits-role {
+/* ── Tech Stack Table ──
+   Two-column layout: label on the left, value on the right */
+.credits-tech-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+/* Each tech stack row — label/value pair */
+.credits-tech-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border);
+}
+
+/* Tech label (left side) — bold, muted */
+.credits-tech-label {
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-muted);
   font-family: var(--font-family);
   font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+/* Tech value (right side) — primary text */
+.credits-tech-value {
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  text-align: right;
 }
 
 /* ── Attribution Footer ──
-   Centered text below the team list */
+   Centered text below the tech stack */
 .credits-attribution {
   text-align: center;
 }
@@ -269,13 +325,5 @@
   font-weight: var(--font-weight-bold);
   font-family: var(--font-family);
   font-size: var(--font-size-base);
-  margin: 0 0 var(--space-1) 0;
-}
-
-/* "Powered by..." line */
-.credits-powered {
-  color: var(--color-text-muted);
-  font-family: var(--font-family);
-  font-size: var(--font-size-sm);
   margin: 0;
 }
