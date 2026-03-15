@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 from dependencies import get_supabase_client
 from schemas.response import success_response, error_response
 from crud import users as crud_users
+from crud import portfolios as crud_portfolios
 
 # Import advisor functions — the chatbot logic lives in chatbot/advisor.py
 from chatbot.advisor import (
@@ -216,13 +217,38 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
     if err:
         return JSONResponse(status_code=404, content=error_response(err))
 
-    # Parse preferences from the DB (JSONB column, may be None)
+    # Parse preferences from the DB (JSONB column, may be None or a JSON string)
     db_preferences = user_data.get("preferences") or {}
+    # If Supabase returned a JSON string instead of a parsed dict, decode it
+    if isinstance(db_preferences, str):
+        try:
+            db_preferences = json.loads(db_preferences)
+        except (json.JSONDecodeError, TypeError):
+            db_preferences = {}
     # Remove the saved_at timestamp if present — it's metadata, not a preference
-    db_preferences.pop("saved_at", None)
+    if isinstance(db_preferences, dict):
+        db_preferences.pop("saved_at", None)
+    else:
+        db_preferences = {}
 
     # Load memory text from the DB (text column, may be None)
     memory_content = user_data.get("memory") or ""
+
+    # --- Fetch portfolio data for contextual advice ---
+    # The advisor uses this to reference the user's cash, invested capital,
+    # and current portfolio value when making suggestions.
+    portfolio_summary = None
+    try:
+        portfolio_data, portfolio_err = crud_portfolios.get_by_username(db, body.username)
+        if not portfolio_err and portfolio_data:
+            portfolio_summary = {
+                "cash_reserve": float(portfolio_data.get("cash_reserve", 0)),
+                "total_capital_invested": float(portfolio_data.get("total_capital_invested", 0)),
+                "current_portfolio_value": float(portfolio_data.get("current_portfolio_value", 0)),
+            }
+    except Exception as exc:
+        # Non-fatal — chat works without portfolio context
+        print(f"[Chat] WARNING: failed to fetch portfolio for {body.username}: {exc}", flush=True)
 
     # --- Get or create session ---
     session = _get_or_create_session(body.username, db_preferences)
@@ -322,7 +348,8 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
 
         # Generate Claude response for this confirmation state
         system_prompt = build_advisor_system_prompt(
-            collected, memory_content, state, pending_stock
+            collected, memory_content, state, pending_stock,
+            portfolio_summary=portfolio_summary,
         )
         try:
             response = _client.messages.create(
@@ -359,7 +386,8 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
     # =================================================================
     if state == ConversationState.DISCUSSING_STOCK:
         system_prompt = build_advisor_system_prompt(
-            collected, memory_content, state, pending_stock
+            collected, memory_content, state, pending_stock,
+            portfolio_summary=portfolio_summary,
         )
         try:
             response = _client.messages.create(
@@ -458,7 +486,8 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
 
         # Generate Claude's discussion of this stock
         system_prompt = build_advisor_system_prompt(
-            collected, memory_content, state, pending_stock
+            collected, memory_content, state, pending_stock,
+            portfolio_summary=portfolio_summary,
         )
         try:
             response = _client.messages.create(
@@ -494,7 +523,8 @@ def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
 
     # No new stocks — generate a normal conversational response
     system_prompt = build_advisor_system_prompt(
-        collected, memory_content, state, pending_stock
+        collected, memory_content, state, pending_stock,
+        portfolio_summary=portfolio_summary,
     )
     try:
         response = _client.messages.create(

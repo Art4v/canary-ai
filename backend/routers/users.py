@@ -12,6 +12,7 @@ from dependencies import get_supabase_client
 from schemas.response import success_response, error_response
 from schemas.users import UserCreate, UserLogin, UserUpdate
 from crud import users as crud_users
+from crud import portfolios as crud_portfolios
 
 # All routes are prefixed with /database/users by the include_router call.
 router = APIRouter(prefix="/database/users", tags=["users"])
@@ -62,6 +63,31 @@ def create_user(body: UserCreate, db: Client = Depends(get_supabase_client)):
     data, err = crud_users.create(db, body.model_dump())
     if err:
         return JSONResponse(status_code=400, content=error_response(err))
+
+    # Auto-create a zeroed-out portfolio for the new user.
+    # This ensures every user has a portfolio row from the start.
+    # If portfolio creation fails, log a warning but don't fail registration
+    # — the user row already exists and portfolios can be created later.
+    try:
+        _portfolio_data, portfolio_err = crud_portfolios.create(db, {
+            "username": body.username,
+            "cash_reserve": 0,
+            "total_capital_invested": 0,
+            "current_portfolio_value": 0,
+        })
+        if portfolio_err:
+            print(
+                f"[Users] WARNING: failed to auto-create portfolio for "
+                f"'{body.username}': {portfolio_err}",
+                flush=True,
+            )
+    except Exception as exc:
+        print(
+            f"[Users] WARNING: exception creating portfolio for "
+            f"'{body.username}': {exc}",
+            flush=True,
+        )
+
     return success_response(data)
 
 

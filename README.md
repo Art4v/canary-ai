@@ -61,7 +61,7 @@ A hackathon project built for UNIHACK 2026.
   - **Users** (`/database/users`)
     - `GET /database/users` — list all users
     - `GET /database/users/{username}` — get a single user
-    - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage
+    - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage; automatically creates a zeroed-out portfolio row (`cash_reserve: 0`, `total_capital_invested: 0`, `current_portfolio_value: 0`) so every new user has a portfolio from the start
     - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash and returns user data on success
     - `PUT /database/users/{username}` — update user fields (all optional: `username`, `email`, `password`, `api_key`, `trading_style`, `notifications`)
     - `DELETE /database/users/{username}` — delete a user
@@ -84,7 +84,7 @@ A hackathon project built for UNIHACK 2026.
     - `PUT /database/transactions/{username}` — update transaction fields
     - `DELETE /database/transactions/{username}` — delete all transactions for a user
 - **Chat API** (`/chat`) — exposes the chatbot advisor as a REST API for the frontend ChatWindow; per-user session state is stored in memory, while preferences and memory are persisted to the Supabase `users` table (`memory` text column and `preferences` JSONB column)
-  - `POST /chat` — send a message (`{"message", "username"}`) and receive `{"reply", "preferences_updated", "memory_entry", "state"}`; runs the full state machine (extraction, stock discussion/confirmation, field validation) per message
+  - `POST /chat` — send a message (`{"message", "username"}`) and receive `{"reply", "preferences_updated", "memory_entry", "state"}`; runs the full state machine (extraction, stock discussion/confirmation, field validation) per message; fetches the user's portfolio data (cash reserve, capital invested, portfolio value) from the `portfolios` table and injects it into the advisor's system prompt so the chatbot can reference the user's actual financial position when giving advice
   - `POST /chat/reset` — clear the server-side session for a user (`{"username"}`); does not clear persisted DB memory/preferences
 - **API key hashing** — when a user saves an API key via `PUT /database/users/{username}`, the backend hashes it with bcrypt before storing (same pattern as passwords); the frontend sends plaintext, the backend handles hashing
 - **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture; available both as a standalone terminal app and via the `/chat` REST API

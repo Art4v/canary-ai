@@ -102,6 +102,7 @@ def build_advisor_system_prompt(
     memory_content: str,
     state: str,
     pending_stock: str | None = None,
+    portfolio_summary: dict | None = None,
 ) -> str:
     """
     Build a dynamic system prompt that tells Claude the current state,
@@ -117,6 +118,10 @@ def build_advisor_system_prompt(
         Current ConversationState value (COLLECTING, DISCUSSING_STOCK, etc.).
     pending_stock : str or None
         The ticker symbol currently being discussed/confirmed (if any).
+    portfolio_summary : dict or None
+        Portfolio figures from the DB (cash_reserve, total_capital_invested,
+        current_portfolio_value). If provided, injected into the prompt so
+        the advisor can reference the user's financial position.
 
     Returns
     -------
@@ -134,6 +139,20 @@ def build_advisor_system_prompt(
 
     # Figure out which fields are still missing
     missing = [f for f in _REQUIRED_FIELDS if f not in collected or collected[f] is None]
+
+    # Build the portfolio context section (only if portfolio data is available)
+    # This lets the advisor reference the user's actual financial position
+    # when making suggestions (e.g. "you've got $5k in cash, want to invest some?")
+    portfolio_section = ""
+    if portfolio_summary:
+        portfolio_section = (
+            "\n\n## Your portfolio\n"
+            f"- Cash reserve: ${portfolio_summary['cash_reserve']:,.2f}\n"
+            f"- Total capital invested: ${portfolio_summary['total_capital_invested']:,.2f}\n"
+            f"- Current portfolio value: ${portfolio_summary['current_portfolio_value']:,.2f}\n"
+            "Use these figures naturally in conversation when relevant — e.g. suggesting "
+            "how to deploy idle cash or noting portfolio performance."
+        )
 
     # Build the memory context section (only if we have prior memory)
     memory_section = ""
@@ -189,7 +208,7 @@ ask them to clarify which of the 3 options fits best
 - Non-stock fields (cash_reserve, trading_style, stock_preferences) are saved immediately — \
 no confirmation needed for those. Just acknowledge with a brief "got it" style response.
 - Stock tickers require a brief discussion before committing — don't auto-add them
-{memory_section}"""
+{portfolio_section}{memory_section}"""
 
 
 def _build_state_instructions(
