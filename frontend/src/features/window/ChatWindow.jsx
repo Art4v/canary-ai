@@ -3,7 +3,6 @@ import { useAuth } from '../../contexts/AuthContext.jsx'
 import Window from './Window'
 import closeIcon from '@/assets/chat/chat_close.png'
 import plusIcon from '@/assets/chat/chat_plus.png'
-import { Send } from 'lucide-react'
 import './ChatWindow.css'
 
 /**
@@ -23,7 +22,7 @@ const GREETING_MESSAGE = {
  *
  * Layout (top to bottom):
  *   1. Scrollable message area — alternating bot/user speech bubbles with avatars
- *   2. Input bar — text field, new-conversation "+" button, and send star-icon button
+ *   2. Input bar — text field and plus-icon send button
  *
  * On mount, shows a single greeting message from the bot.
  * User messages are sent to POST /chat with the logged-in username,
@@ -168,32 +167,6 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
   }
 
   /**
-   * handleNewConversation — resets the chat to a fresh greeting and
-   * clears the server-side session via POST /chat/reset.
-   *
-   * Triggered by the "+" button in the input bar.
-   */
-  const handleNewConversation = async () => {
-    /* Reset local state immediately for responsiveness */
-    setMessages([{ ...GREETING_MESSAGE, id: Date.now(), timestamp: Date.now() }])
-    setInputValue('')
-
-    /* Clear the server-side session if we have a username */
-    const username = user?.username
-    if (username) {
-      try {
-        await fetch('/chat/reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username }),
-        })
-      } catch {
-        /* Non-critical — if the reset fails, the next /chat call will still work */
-      }
-    }
-  }
-
-  /**
    * handleKeyDown — sends the message when Enter is pressed without Shift.
    * Shift+Enter allows multi-line input (default textarea behavior if swapped later).
    *
@@ -256,7 +229,7 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
       </div>
 
       {/* ── Input Bar ──
-          Pinned to the bottom: text input + new conversation button + send button. */}
+          Pinned to the bottom: text input + plus-icon send button. */}
       <div className="chat-input-bar">
         {/* Text input field — disabled while loading */}
         <input
@@ -269,25 +242,16 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
           disabled={isLoading}
         />
 
-        {/* New conversation button — clears chat and resets server session */}
+        {/* Send button — submits the current input; disabled while loading.
+            Uses the plus icon asset as the send button. */}
         <button
           className="chat-new-btn"
-          onClick={handleNewConversation}
-          aria-label="New conversation"
-          title="New conversation"
-        >
-          <img src={plusIcon} alt="New conversation" />
-        </button>
-
-        {/* Send button — submits the current input; disabled while loading */}
-        <button
-          className="chat-send-btn"
           onClick={handleSend}
           aria-label="Send message"
-          title="Send"
+          title="Send message"
           disabled={isLoading}
         >
-          <Send size={18} color="white" />
+          <img src={plusIcon} alt="Send message" />
         </button>
       </div>
     </Window>
