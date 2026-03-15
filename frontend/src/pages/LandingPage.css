@@ -105,9 +105,9 @@
 /* ── Egg Positioning ──
    Each invisible button is placed over the corresponding egg
    in the composite image. Coordinates are percentages of the container. */
-.egg-login   { left: 19%; top: 16%; }
-.egg-signup  { left: 37%; top: 8%; }
-.egg-credits { left: 55%; top: 16%; }
+.egg-login   { left: 19%; top: 8%; }
+.egg-signup  { left: 37%; top: 0%; }
+.egg-credits { left: 60%; top: 8%; }
 
 /* ── Cracked Egg Overlay ──
    Hidden by default, shown on hover. Contains the bottom shell,
@@ -149,19 +149,25 @@
 
 /* Top half of cracked shell — sits on canary's head.
    scaleX(-1) mirrors horizontally so the shell opening faces left,
-   sitting on the canary's head like a hat. */
+   sitting on the canary's head like a hat.
+   z-index: 5 ensures the shell renders OVER the canary (z-index: 2). */
 .crack-top {
   position: relative;
-  z-index: 3;
+  z-index: 5;
   width: 70% !important;
   margin-top: -45%;
   transform: scaleX(-1);
 }
 
-/* Text label below the cracked egg */
+/* Text label above the cracked egg — order: -1 moves it visually
+   to the top of the flex column without changing DOM order.
+   z-index: 10 keeps it above every egg layer. */
 .egg-label {
   display: block;
-  margin-top: 4px;
+  order: -1;
+  margin-bottom: 2px;
+  position: relative;
+  z-index: 10;
   font-family: var(--font-family);
   font-size: clamp(0.7rem, 1.5vw, 1rem);
   font-weight: var(--font-weight-bold);
@@ -227,22 +233,62 @@
   /* Pull base up to overlap with trunk for seamless transition */
   margin-top: -10px;
   padding-bottom: 60px;
-  /* Green background fills any gaps beyond the tiled grass image */
-  background-color: #2d5a1b;
+  /* Allow grass blades to overflow above the section's top edge */
+  overflow: visible;
+  /* Radial gradient creates a natural "clearing" effect — lighter center, darker edges */
+  background: radial-gradient(ellipse at 50% 40%, #356b20 0%, #2d5a1b 50%, #1e4a10 100%);
+}
+
+/* ── Grass Blades ──
+   Dense array of thin pointed grass blades that extend above the section's
+   top edge, breaking the flat horizontal cut between trunk/sky and the
+   green ground. Positioned absolutely so they overflow upward. */
+.landing-grass-blades {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Each blade is absolutely positioned with a negative top value
+   so it pokes above the section boundary. transform-origin at the base
+   so the wind sway pivots from the ground. */
+.grass-blade {
+  position: absolute;
+  bottom: 0;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: bottom center;
+  animation: grass-sway var(--sway-duration, 3s) ease-in-out var(--sway-delay, 0s) infinite;
+}
+
+/* ── Wind sway keyframes ──
+   Gentle back-and-forth rotation to simulate a light breeze.
+   Each blade gets a unique --sway-duration and --sway-delay via inline
+   styles for natural, non-uniform movement. */
+@keyframes grass-sway {
+  0%   { transform: rotate(var(--base-rot, 0deg)); }
+  25%  { transform: rotate(calc(var(--base-rot, 0deg) + 4deg)); }
+  50%  { transform: rotate(var(--base-rot, 0deg)); }
+  75%  { transform: rotate(calc(var(--base-rot, 0deg) - 3deg)); }
+  100% { transform: rotate(var(--base-rot, 0deg)); }
 }
 
 /* ── Full-Width Grass ──
-   Tiles tree_bottom.png horizontally across the entire viewport.
-   mix-blend-mode: screen blends the PNG's black background areas
-   with the dark green section background. */
+   Pure CSS grass using a tiling SVG with 3 layers of green bumps.
+   5 layers of green bumps from darkest/tallest (back) to lightest/shortest (front).
+   Front layer matches the section background center color for a seamless blend.
+   Each tile is 200px wide, repeating horizontally. */
 .landing-base-grass {
   width: 100%;
-  height: clamp(200px, 30vw, 400px);
+  height: clamp(80px, 12vw, 160px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 80' preserveAspectRatio='none'%3E%3Cpath d='M0,80 L0,22 Q20,2 45,22 Q65,8 90,22 Q110,2 135,22 Q160,10 185,22 Q195,18 200,22 L200,80Z' fill='%231a4210'/%3E%3Cpath d='M0,80 L0,30 Q25,10 50,30 Q75,14 100,30 Q125,10 150,30 Q175,16 200,30 L200,80Z' fill='%231e4a10'/%3E%3Cpath d='M0,80 L0,40 Q30,20 60,40 Q80,26 100,40 Q130,20 160,40 Q185,28 200,40 L200,80Z' fill='%23236012'/%3E%3Cpath d='M0,80 L0,50 Q20,34 45,50 Q60,40 80,50 Q100,34 120,50 Q140,40 165,50 Q185,42 200,50 L200,80Z' fill='%23266815'/%3E%3Cpath d='M0,80 L0,60 Q15,48 35,60 Q50,52 70,60 Q85,48 105,60 Q120,52 140,60 Q155,48 175,60 Q190,54 200,60 L200,80Z' fill='%232d5a1b'/%3E%3C/svg%3E");
+  background-size: 200px 100%;
   background-repeat: repeat-x;
-  background-size: auto 100%;
-  background-position: center top;
-  /* Blend black areas in the PNG with the green background */
-  mix-blend-mode: screen;
+  background-position: left top;
 }
 
 /* ── Bottom Action Buttons ──
@@ -322,3 +368,34 @@
     0 2px 0 var(--color-border),
     inset 0 2px 4px rgba(255, 255, 255, 0.3);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   Ground Decorations — flowers & rocks scattered across the green base
+   Zero-height wrapper so decorations overflow via absolute positioning.
+   ══════════════════════════════════════════════════════════════ */
+.landing-ground-decor {
+  position: relative;
+  width: 100%;
+  height: 0;
+  z-index: 2;
+}
+
+/* ── Shared decoration base ──
+   All flowers and rocks are absolutely positioned, non-interactive. */
+.ground-flower,
+.ground-rock {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Individual decoration positions ──
+   Percentage-based left values with small top offsets and subtle
+   rotations for a natural, hand-scattered appearance. */
+.decor-1 { left: 8%;  top: 5px;  transform: rotate(-12deg); }
+.decor-2 { left: 25%; top: 18px; transform: rotate(8deg); }
+.decor-3 { left: 48%; top: 8px;  transform: rotate(-5deg); }
+.decor-4 { left: 78%; top: 22px; transform: rotate(15deg); }
+.decor-5 { left: 15%; top: 30px; transform: rotate(20deg); }
+.decor-6 { left: 62%; top: 12px; transform: rotate(-8deg); }
+.decor-7 { left: 88%; top: 28px; transform: rotate(10deg); }
