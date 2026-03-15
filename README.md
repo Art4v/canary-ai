@@ -81,10 +81,14 @@ A hackathon project built for UNIHACK 2026.
     - `POST /database/transactions` — create a transaction (`{"username", "ticker", "tx_type", "quantity", "price_per_unit", "total_amount"}`)
     - `PUT /database/transactions/{username}` — update transaction fields
     - `DELETE /database/transactions/{username}` — delete all transactions for a user
-- **Investment Advisor Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that helps users explore investment ideas
-  - Interactive conversation loop with an expert stock market advisor persona
-  - After each exchange, a separate Claude API call extracts all mentioned stock tickers and writes them to `backend/chatbot/watchlist.csv` (columns: `ticker`, `added_at`)
-  - Commands: `reset` clears conversation + watchlist, `quit`/`exit` exits, Ctrl+C exits cleanly
+- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation
+  - Collects: `stocks_to_keep` (ticker list), `cash_reserve` (dollar amount), `trading_style` (risk-aggressive / balanced / risk-averse), `stock_preferences` (themes/sectors list)
+  - Separate Claude API call extracts and validates fields from each user message; resolves company names to tickers (Apple → AAPL), normalizes cash amounts ($10k → 10000)
+  - Pre-commit confirmation flow — shows a plain-language summary and waits for explicit user confirmation before writing `preferences.json`
+  - Persistent memory via `memory.md` — logs confirmed decisions with dated entries; loaded on startup so the advisor references prior context naturally (e.g. "last time you passed on NVDA — still a no?")
+  - Returning user support — loads `preferences.json` on startup to pre-populate fields and skip re-asking known info
+  - Edge cases: "none"/"no stocks" → empty list, "$0"/"zero" → 0.0, ambiguous trading style → asks to clarify, multiple fields in one message → all extracted
+  - Commands: `quit`/`exit` exits, Ctrl+C exits cleanly
   - API key loaded from `backend/chatbot/.env` (not committed); copy `.env.example` to `.env` and add your key
   - Run: `cd backend/chatbot && python advisor.py`
 - All data directories under `data/` are wiped on server restart
@@ -144,8 +148,10 @@ unihack-hackathon-submission/
 │   ├── predictions/             # Prediction output directory (auto-created at runtime)
 │   │   ├── holdings.csv         # Current portfolio positions (auto-generated)
 │   │   └── portfolio.csv        # Trade decisions output (auto-generated)
-│   ├── chatbot/                   # Standalone investment advisor chatbot
-│   │   ├── advisor.py             # Terminal chatbot using Anthropic SDK
+│   ├── chatbot/                   # Preference collection chatbot
+│   │   ├── advisor.py             # Terminal chatbot — collects 4 investment preferences via casual conversation
+│   │   ├── preferences.json       # Saved preferences (auto-generated after user confirmation)
+│   │   ├── memory.md              # Persistent session memory log (auto-generated)
 │   │   ├── .env                   # API key (not committed — copy .env.example)
 │   │   └── .env.example           # Template for chatbot API key
 │   ├── .env.example             # Template for required environment variables
