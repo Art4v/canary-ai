@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext.jsx'
 import Window from './Window'
 import closeIcon from '@/assets/chat/chat_close.png'
 import plusIcon from '@/assets/chat/chat_plus.png'
+import { Send } from 'lucide-react'
 import './ChatWindow.css'
 
 /**
@@ -278,7 +279,7 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
           <img src={plusIcon} alt="New conversation" />
         </button>
 
-        {/* Send button — submits the current input using the star (plus) icon; disabled while loading */}
+        {/* Send button — submits the current input; disabled while loading */}
         <button
           className="chat-send-btn"
           onClick={handleSend}
@@ -286,7 +287,7 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
           title="Send"
           disabled={isLoading}
         >
-          <img src={plusIcon} alt="Send" />
+          <Send size={18} color="white" />
         </button>
       </div>
     </Window>
