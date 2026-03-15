@@ -5,13 +5,12 @@ import closeIcon from '@/assets/trades/close.png'
 import './TradesWindow.css'
 
 /**
- * TradesWindow — Transaction history dashboard with deposit/withdraw functionality.
+ * TradesWindow — Portfolio dashboard with deposit/withdraw functionality.
  *
  * Layout (top to bottom):
  *   1. Portfolio metrics card — current value, cash reserve, capital invested
  *   2. Deposit / Withdraw section — dollar input + action buttons
- *   3. Trade history table — scrollable list of past transactions
- *   4. Footer strip
+ *   3. Footer strip
  *
  * @param {string}   windowId         Unique identifier for snap system
  * @param {Function} onClose          Called when the window's X button is clicked
@@ -26,14 +25,13 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
 
   /* ── State ── */
   const [portfolio, setPortfolio] = useState(null)         // portfolio summary row
-  const [transactions, setTransactions] = useState([])      // array of transaction objects
   const [loading, setLoading] = useState(true)              // initial load flag
   const [error, setError] = useState(null)                  // fetch error message
   const [amount, setAmount] = useState('')                   // deposit/withdraw input value
   const [actionError, setActionError] = useState(null)       // inline error for deposit/withdraw
   const [actionLoading, setActionLoading] = useState(false)  // disables buttons during request
 
-  /* ── Fetch portfolio + transactions on mount ── */
+  /* ── Fetch portfolio + transactions on mount, then poll every 10 s ── */
   useEffect(() => {
     if (!user?.username) {
       setLoading(false)
@@ -41,40 +39,41 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
     }
 
     /**
-     * fetchAll — fetches portfolio summary and transaction history in parallel.
+     * fetchAll — fetches portfolio summary from the database.
+     * Called immediately on mount and then every 10 seconds via setInterval
+     * so that changes made elsewhere (e.g. via chat) appear automatically.
+     *
+     * @param {boolean} isInitial  True on the first call to show the loading spinner
      */
-    async function fetchAll() {
+    async function fetchAll(isInitial = false) {
       try {
-        setLoading(true)
+        if (isInitial) setLoading(true)
         setError(null)
 
-        /* Parallel fetch: portfolio summary + transaction history (authenticated) */
-        const [portfolioRes, txRes] = await Promise.all([
-          authFetch(`/database/portfolios/${user.username}`),
-          authFetch(`/database/transactions/${user.username}`),
-        ])
+        /* Fetch portfolio summary (authenticated) */
+        const portfolioRes = await authFetch(`/database/portfolios/${user.username}`)
 
         /* Parse portfolio summary */
         const portfolioJson = await portfolioRes.json()
         if (portfolioJson.success && portfolioJson.data) {
           setPortfolio(portfolioJson.data)
         }
-
-        /* Parse transactions — normalise to array */
-        const txJson = await txRes.json()
-        if (txJson.success && txJson.data) {
-          const txArr = Array.isArray(txJson.data) ? txJson.data : [txJson.data]
-          setTransactions(txArr)
-        }
       } catch (err) {
         console.error('TradesWindow fetch error:', err)
         setError('Failed to load trades data.')
       } finally {
-        setLoading(false)
+        if (isInitial) setLoading(false)
       }
     }
 
-    fetchAll()
+    /* Initial fetch with loading spinner */
+    fetchAll(true)
+
+    /* Poll every 10 seconds so new transactions (e.g. from chat) appear automatically */
+    const intervalId = setInterval(() => fetchAll(false), 10_000)
+
+    /* Clean up the interval when the component unmounts or username changes */
+    return () => clearInterval(intervalId)
   }, [user?.username])
 
   /**
@@ -159,26 +158,6 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
     return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
-  /**
-   * formatTimestamp — shorten an ISO timestamp to a readable date-time string.
-   *
-   * @param {string} ts  Raw timestamp string
-   * @returns {string}   Formatted like "3/15 14:30"
-   */
-  function formatTimestamp(ts) {
-    try {
-      const d = new Date(ts)
-      return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
-    } catch {
-      return ts
-    }
-  }
-
-  /* Sort transactions by executed_at descending (newest first) */
-  const sortedTransactions = [...transactions].sort(
-    (a, b) => new Date(b.executed_at) - new Date(a.executed_at)
-  )
-
   return (
     <Window
       windowId={windowId}
@@ -253,53 +232,6 @@ export default function TradesWindow({ windowId, onClose, onFocus, zIndex, initi
             {/* Inline error message for deposit/withdraw validation */}
             {actionError && (
               <div className="trades-inline-error">{actionError}</div>
-            )}
-          </div>
-
-          {/* ── Transaction History Section ──
-              Scrollable table of past trades executed by the prediction system. */}
-          <div className="trades-history-section">
-            <h3 className="trades-section-title">Trade History</h3>
-            {sortedTransactions.length === 0 ? (
-              <div className="trades-empty">No trades executed yet</div>
-            ) : (
-              <table className="trades-history-table">
-                <thead>
-                  <tr>
-                    <th>Ticker</th>
-                    <th>Type</th>
-                    <th>Qty</th>
-                    <th>Price/Unit</th>
-                    <th>Total</th>
-                    <th>Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedTransactions.map((tx, i) => {
-                    /* Determine color class based on transaction type */
-                    const txType = (tx.tx_type || '').toLowerCase()
-                    const typeClass =
-                      txType === 'buy' ? 'trades-tx-type--buy'
-                      : txType === 'sell' ? 'trades-tx-type--sell'
-                      : 'trades-tx-type--hold'
-
-                    return (
-                      <tr key={tx.transaction_id || i}>
-                        <td className="trades-ticker">{tx.ticker}</td>
-                        <td>
-                          <span className={`trades-tx-type ${typeClass}`}>
-                            {(tx.tx_type || '').toUpperCase()}
-                          </span>
-                        </td>
-                        <td>{Number(tx.quantity).toLocaleString()}</td>
-                        <td>{formatDollar(tx.price_per_unit)}</td>
-                        <td>{formatDollar(tx.total_amount)}</td>
-                        <td className="trades-date">{formatTimestamp(tx.executed_at)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
             )}
           </div>
 

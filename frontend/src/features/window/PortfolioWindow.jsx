@@ -36,7 +36,7 @@ export default function PortfolioWindow({ windowId, onClose, onFocus, zIndex, in
   const [loading, setLoading] = useState(true)             // initial load flag
   const [error, setError] = useState(null)                 // fetch error message
 
-  /* ── Fetch all data on mount ── */
+  /* ── Fetch all data on mount, then poll every 10 s ── */
   useEffect(() => {
     if (!user?.username) {
       setLoading(false)
@@ -46,10 +46,14 @@ export default function PortfolioWindow({ windowId, onClose, onFocus, zIndex, in
     /**
      * fetchAll — fetches portfolio summary, holdings, tracked tickers,
      * and price history for each tracked ticker in parallel where possible.
+     * Called immediately on mount and then every 10 seconds via setInterval
+     * so that holdings/portfolio changes made elsewhere (e.g. via chat) appear automatically.
+     *
+     * @param {boolean} isInitial  True on the first call to show the loading spinner
      */
-    async function fetchAll() {
+    async function fetchAll(isInitial = false) {
       try {
-        setLoading(true)
+        if (isInitial) setLoading(true)
         setError(null)
 
         /* Fetch portfolio summary, holdings, and tracked tickers in parallel.
@@ -100,11 +104,18 @@ export default function PortfolioWindow({ windowId, onClose, onFocus, zIndex, in
         console.error('PortfolioWindow fetch error:', err)
         setError('Failed to load portfolio data.')
       } finally {
-        setLoading(false)
+        if (isInitial) setLoading(false)
       }
     }
 
-    fetchAll()
+    /* Initial fetch with loading spinner */
+    fetchAll(true)
+
+    /* Poll every 10 seconds so new holdings/portfolio changes appear automatically */
+    const intervalId = setInterval(() => fetchAll(false), 10_000)
+
+    /* Clean up the interval when the component unmounts or username changes */
+    return () => clearInterval(intervalId)
   }, [user?.username])
 
   /**

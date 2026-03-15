@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════
-   TradesWindow — Transaction history & cash management
+   TradesWindow — Portfolio dashboard & cash management
    ══════════════════════════════════════════ */
 
 /* ── Loading / Error status message ── */
@@ -162,96 +162,6 @@
   color: var(--color-down, #e74c3c);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
-}
-
-/* ── Transaction History Section ──
-   Scrollable container for the trades table. */
-.trades-history-section {
-  padding: var(--space-4);
-  min-height: 0;
-  overflow-y: auto;
-  flex: 1;
-}
-
-/* Section title above the table */
-.trades-section-title {
-  margin: 0 0 var(--space-3) 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
-}
-
-/* Empty state message */
-.trades-empty {
-  text-align: center;
-  padding: var(--space-6);
-  color: var(--color-text);
-  opacity: 0.6;
-  font-size: var(--font-size-base);
-}
-
-/* ── History Table ──
-   Full-width table matching the portfolio holdings table pattern. */
-.trades-history-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-size-sm);
-}
-
-/* Table header cells */
-.trades-history-table th {
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  color: var(--win-dark);
-  font-weight: var(--font-weight-bold);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-/* Table body cells */
-.trades-history-table td {
-  padding: var(--space-2) var(--space-3);
-  color: var(--color-text);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-/* Ticker column — bold and accented */
-.trades-ticker {
-  font-weight: var(--font-weight-bold);
-  color: var(--win-primary);
-}
-
-/* Date column — slightly muted */
-.trades-date {
-  opacity: 0.75;
-}
-
-/* ── Transaction Type Badges ──
-   Color-coded labels for buy/sell/hold. */
-.trades-tx-type {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-xs, 0.75rem);
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Buy — green badge */
-.trades-tx-type--buy {
-  background: rgba(46, 204, 113, 0.2);
-  color: #2ecc71;
-}
-
-/* Sell — red badge */
-.trades-tx-type--sell {
-  background: rgba(231, 76, 60, 0.2);
-  color: #e74c3c;
-}
-
-/* Hold — gray badge */
-.trades-tx-type--hold {
-  background: rgba(149, 165, 166, 0.2);
-  color: #95a5a6;
 }
 
 /* ── Footer Strip ──
