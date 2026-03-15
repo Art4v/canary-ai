@@ -7,3 +7,5 @@
 - User removed AAPL from portfolio
 - Trading style set to risk-aggressive
 - Cash reserve set to $500,000.00
+- Stock preferences set to: defense, military
+- User confirmed adding RTX to portfolio

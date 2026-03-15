@@ -27,12 +27,18 @@ Reference schema for all four tables. **Do not run this SQL directly** — it is
 
 ```sql
 -- Users — core account table; username and email are unique; api_key stores a bcrypt hash (nullable, exactly 60 chars)
+-- trading_style is a USER-DEFINED enum with values: balanced, risk_averse, risk-aggressive (nullable)
+-- memory stores the chatbot's persistent session memory as free-form text (nullable)
+-- preferences stores the chatbot's collected investment preferences as JSONB (nullable)
 CREATE TABLE public.users (
   user_id uuid NOT NULL DEFAULT gen_random_uuid(),
   username character varying NOT NULL UNIQUE,
   email character varying NOT NULL UNIQUE,
   password_hash text NOT NULL,
   api_key text DEFAULT NULL,
+  trading_style USER-DEFINED DEFAULT NULL,
+  memory text DEFAULT NULL,
+  preferences jsonb DEFAULT NULL,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT users_pkey PRIMARY KEY (user_id),

@@ -18,6 +18,7 @@ A hackathon project built for UNIHACK 2026.
 | Async IO | aiofiles                    |
 | Auth     | bcrypt (server-side hashing)|
 | Chatbot  | Anthropic SDK (Claude)      |
+| News AI  | Anthropic SDK (Claude opus-4-6) |
 
 ## Features
 
@@ -61,7 +62,7 @@ A hackathon project built for UNIHACK 2026.
   - **Users** (`/database/users`)
     - `GET /database/users` — list all users
     - `GET /database/users/{username}` — get a single user
-    - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage
+    - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage; automatically creates a zeroed-out portfolio row (`cash_reserve: 0`, `total_capital_invested: 0`, `current_portfolio_value: 0`) so every new user has a portfolio from the start
     - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash and returns user data on success
     - `PUT /database/users/{username}` — update user fields (all optional: `username`, `email`, `password`, `api_key`, `trading_style`, `notifications`)
     - `DELETE /database/users/{username}` — delete a user
@@ -83,7 +84,11 @@ A hackathon project built for UNIHACK 2026.
     - `POST /database/transactions` — create a transaction (`{"username", "ticker", "tx_type", "quantity", "price_per_unit", "total_amount"}`)
     - `PUT /database/transactions/{username}` — update transaction fields
     - `DELETE /database/transactions/{username}` — delete all transactions for a user
-- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — standalone terminal-based chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture
+- **Chat API** (`/chat`) — exposes the chatbot advisor as a REST API for the frontend ChatWindow; per-user session state is stored in memory, while preferences and memory are persisted to the Supabase `users` table (`memory` text column and `preferences` JSONB column)
+  - `POST /chat` — send a message (`{"message", "username"}`) and receive `{"reply", "preferences_updated", "memory_entry", "state"}`; runs the full state machine (extraction, stock discussion/confirmation, field validation) per message; fetches the user's portfolio data (cash reserve, capital invested, portfolio value) from the `portfolios` table and injects it into the advisor's system prompt so the chatbot can reference the user's actual financial position when giving advice
+  - `POST /chat/reset` — clear the server-side session for a user (`{"username"}`); does not clear persisted DB memory/preferences
+- **API key hashing** — when a user saves an API key via `PUT /database/users/{username}`, the backend hashes it with bcrypt before storing (same pattern as passwords); the frontend sends plaintext, the backend handles hashing
+- **Preference Collection Chatbot** (`backend/chatbot/advisor.py`) — chatbot powered by the Anthropic SDK (Claude) that collects 4 investment preference data points through casual SMS-style conversation using a state machine architecture; available both as a standalone terminal app and via the `/chat` REST API
   - **State machine** with 4 states: `COLLECTING` (gathering base fields), `DISCUSSING_STOCK` (brief back-and-forth about a specific ticker), `CONFIRMING_STOCK` (yes/no commit decision), `ADVISING` (all fields set, open conversation)
   - Collects: `stocks_to_keep` (ticker list), `cash_reserve` (dollar amount), `trading_style` (risk-aggressive / balanced / risk-averse), `stock_preferences` (themes/sectors list)
   - Separate Claude API call extracts and validates fields from each user message; resolves company names to tickers (Apple → AAPL), normalizes cash amounts ($10k → 10000)
@@ -100,6 +105,20 @@ A hackathon project built for UNIHACK 2026.
   - Commands: `quit`/`exit` exits, Ctrl+C exits cleanly
   - API key loaded from the shared `backend/.env` file (not committed); add `ANTHROPIC_API_KEY=your_key` to `backend/.env`
   - Run: `cd backend/chatbot && python advisor.py`
+- **News-sentiment trade overlay** (`backend/news_prediction/news_prediction.py`) — Python script that adjusts the C++ quant optimizer's trade plan based on Finnhub news sentiment via Claude (claude-opus-4-6)
+  - Loads a Finnhub news CSV, the existing `portfolio.csv` (C++ output), and `holdings.csv`
+  - Constructs a prompt instructing Claude to act as a portfolio risk manager reviewing the quant-optimized trades against recent news
+  - Claude may hold, reduce, or reverse any position if news sentiment warrants it; enforces a 5 % cash floor rule
+  - Parses and validates Claude's JSON response (retries once on malformed JSON); writes adjusted trades to `news_portfolio.csv` and updates `holdings.csv`
+  - CLI: `python news_prediction.py --news news.csv --portfolio portfolio.csv --holdings holdings.csv --output news_portfolio.csv --total-capital 100000 --tickers AAPL MSFT`
+  - `--dry-run` flag prints the prompt without calling Claude
+  - API key loaded from `backend/.env` via python-dotenv
+- **News-sentiment prediction loop** — recurring background loop that calls Claude every 60s to adjust the C++ trade plan based on Finnhub news sentiment; skips the Claude call when `news.csv` hasn't changed since the last cycle to avoid redundant API usage
+  - `POST /news/predict` — start the news prediction loop (409 if already running)
+  - `DELETE /news/predict` — stop the news prediction loop (404 if not running)
+  - Each cycle: fetches portfolio state from Supabase, loads news/portfolio/holdings CSVs, builds a prompt, calls Claude, validates the response, writes `trades/news_portfolio.csv`, and syncs results back to Supabase (holdings upserted, transactions logged, cash reserve updated)
+  - Guards per cycle: news tracking must be active, at least one ticker tracked, `trades/portfolio.csv` must exist, `ANTHROPIC_API_KEY` must be set
+  - **Relaxed cash floor** — Claude's response is accepted when CASH_RESERVE is between 4–5% of total capital (soft warning); hard rejection only below 4%
 - All data directories under `data/` are wiped on server restart
 - Runs on `http://127.0.0.1:8000` with hot-reload via Uvicorn
 
@@ -121,7 +140,7 @@ A hackathon project built for UNIHACK 2026.
 - **Lego-style window snapping** — drag a window near another's edge and a semi-transparent ghost rectangle preview appears at ~30px proximity showing exactly where the window will land; release while the preview is visible to snap with a GSAP animation (snap-on-release); snapped windows move as a group when dragged; resize a shared edge and the bonded window resizes in sync; double-click a seam to unmerge with a playful bounce animation; supports N-window chaining across all 4 edges
 - **Cloud-shaped navigation dock** — large (~750×300px) cloud dock positioned just below center of the viewport, built with inline SVG ellipses (no drop shadow); contains the Canary logo with a GSAP bobbing animation, a "Canary AI" branding label, and 5 cartoony, puffy nav buttons (Chat, Trades, Portfolio, Settings, Help) styled as rounded squares with a 3D embossed effect (darker border, lighter fill, bottom shadow) and text labels; cloud fill uses `var(--color-cloud)` so it adapts to day/night mode automatically
 - **Section color tokens** — 15 CSS custom properties (primary / dark / light) for each navigation section, used for button hover/active states
-- **ChatWindow** — purple-themed AI chat interface with speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter, a `chat_plus.png` image button to reset the conversation, and a send button; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
+- **ChatWindow** — purple-themed AI chat interface wired to the backend `POST /chat` endpoint; shows a greeting on mount, sends messages with the logged-in username, displays a typing indicator while waiting for the response, and renders preference-update system messages (`[✓ field: value]`) inline; the "+" button clears the session via `POST /chat/reset`; speech bubbles, circular avatars, auto-scroll to newest message, send-on-Enter; opens from the Dock "Chat" button and renders inside the draggable/resizable `Window` shell
 - **Corner Launchers** — two expandable quick-access menus in the bottom-left and bottom-right corners of the viewport; each features a 48px puffy trigger button (`+` icon that rotates to `×` on expand), 5 section-colored toggle buttons matching the Dock's navigation, and a "Clear All" action to close every open window; menu items animate in with staggered GSAP scale+fade, open windows show an outline ring, and both launchers work independently
 - **Draggable & resizable window system** — generic `Window` shell component in `features/window/` with `useDrag` and `useResize` hooks; supports 8-direction resize handles, viewport-clamped dragging via the header bar, GSAP pop-in animation, per-section color theming via CSS custom properties, and a `closeIcon` prop for per-window custom close button images
 - **PortfolioWindow** — live portfolio dashboard that fetches real data from Supabase; displays a summary card (total value, cash reserve, capital invested), interactive Recharts line charts for each tracked ticker showing price history, and a holdings table listing current positions (ticker, quantity, avg buy price, estimated value); empty states shown when no stocks are tracked or no holdings exist
@@ -139,7 +158,8 @@ unihack-hackathon-submission/
 │   │   ├── portfolios.py        # Portfolios table CRUD
 │   │   ├── holdings.py          # Holdings table CRUD
 │   │   └── transactions.py      # Transactions table CRUD
-│   ├── routers/                 # FastAPI routers (one per table)
+│   ├── routers/                 # FastAPI routers (one per table + chat)
+│   │   ├── chat.py              # /chat and /chat/reset endpoints (chatbot API)
 │   │   ├── users.py             # /database/users endpoints
 │   │   ├── portfolios.py        # /database/portfolios endpoints
 │   │   ├── holdings.py          # /database/holdings endpoints
@@ -163,6 +183,9 @@ unihack-hackathon-submission/
 │   │   ├── advisor.py             # Terminal chatbot — collects 4 investment preferences via casual conversation
 │   │   ├── preferences.json       # Saved preferences (auto-generated after user confirmation)
 │   │   └── memory.md              # Persistent session memory log (auto-generated)
+│   ├── news_prediction/           # News-sentiment trade overlay
+│   │   ├── __init__.py            # Package init (makes module importable)
+│   │   └── news_prediction.py     # CLI script + importable helpers — adjusts quant trades via Claude API
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
 │   ├── dependencies.py          # Supabase client init + FastAPI Depends

@@ -32,6 +32,8 @@ class UserCreate(BaseModel):
     api_key: Optional[str] = None            # user's personal API key for external services
     trading_style: Optional[str] = None      # one of: balanced, risk-averse, risk-aggressive
     notifications: Optional[bool] = None     # whether the user wants notifications enabled
+    memory: Optional[str] = None             # chatbot persistent session memory (free-form text)
+    preferences: Optional[dict] = None       # chatbot collected investment preferences (JSONB)
 
     # Strip leading/trailing whitespace from all string fields.
     @field_validator("username", "email", "password", mode="before")
@@ -87,6 +89,8 @@ class UserUpdate(BaseModel):
     api_key: Optional[str] = None            # user's personal API key for external services
     trading_style: Optional[str] = None      # one of: balanced, risk-averse, risk-aggressive
     notifications: Optional[bool] = None     # whether the user wants notifications enabled
+    memory: Optional[str] = None             # chatbot persistent session memory (free-form text)
+    preferences: Optional[dict] = None       # chatbot collected investment preferences (JSONB)
 
     @field_validator("username", "email", "password", mode="before")
     @classmethod

@@ -171,3 +171,40 @@
     0 2px 0 var(--color-chats-dark),
     inset 0 2px 4px rgba(255, 255, 255, 0.3);
 }
+
+/* Disabled state for send button and input while loading */
+.chat-send-btn:disabled,
+.chat-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── System Message ──
+   Centered, muted text for preference-update notifications.
+   Displayed between bot and user messages when a field is saved. */
+.chat-message--system {
+  justify-content: center;
+}
+
+.chat-system-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-chats-text);
+  opacity: 0.7;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-card);
+  background: rgba(0, 0, 0, 0.05);
+  font-style: italic;
+}
+
+/* ── Typing Indicator ──
+   Animated dots shown while waiting for the backend to respond. */
+.chat-bubble--typing {
+  opacity: 0.7;
+  animation: typing-pulse 1.2s ease-in-out infinite;
+}
+
+/* Pulsing animation for the typing indicator bubble */
+@keyframes typing-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
