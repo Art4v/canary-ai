@@ -1339,12 +1339,11 @@ async def shutdown_event():
     seen_news_ids.clear()
 
 
-# ── Static file mount for built frontend assets (JS, CSS, images) ────────
-# Must come after all route definitions. FastAPI checks explicit routes
-# first; the mount only serves files that actually exist on disk.
-# Only mounted if the frontend has been built (frontend/dist exists).
-if os.path.isdir(_FRONTEND_DIST):
-    app.mount("/dashboard", StaticFiles(directory=_FRONTEND_DIST), name="dashboard-static")
+# NOTE: No StaticFiles mount at /dashboard — the serve_dashboard() route
+# handler above already serves real static files (JS, CSS, images) when
+# found on disk and falls back to index.html for SPA client-side routing.
+# A StaticFiles mount would shadow the route handler and break SPA paths
+# like /dashboard/login (returning 404 for non-existent files).
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

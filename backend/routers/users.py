@@ -59,8 +59,9 @@ def create_user(body: UserCreate, db: Client = Depends(get_supabase_client)):
     Expects JSON with ``username``, ``email``, and ``password``.
     The plaintext password is hashed server-side before storage.
     """
-    # model_dump() converts the Pydantic model to a plain dict for Supabase.
-    data, err = crud_users.create(db, body.model_dump())
+    # exclude_none=True omits Optional fields the caller didn't send,
+    # so the database column defaults (e.g. notifications=true) take effect.
+    data, err = crud_users.create(db, body.model_dump(exclude_none=True))
     if err:
         return JSONResponse(status_code=400, content=error_response(err))
 
