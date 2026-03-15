@@ -30,8 +30,9 @@ import './SettingsWindow.css'
  * @returns {JSX.Element}
  */
 export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
-  /* Auth context — read current user data and update after successful saves */
-  const { user, updateUser } = useAuth()
+  /* Auth context — read current user data, authFetch for authenticated PUT calls,
+     and updateUser to sync local state after saves */
+  const { user, updateUser, authFetch } = useAuth()
 
   /* ── Local State ──
      Each setting field has its own piece of state so rows update independently. */
@@ -99,7 +100,7 @@ export default function SettingsWindow({ windowId, onClose, onFocus, zIndex, ini
     }
 
     try {
-      const res = await fetch(`/database/users/${encodeURIComponent(uname)}`, {
+      const res = await authFetch(`/database/users/${encodeURIComponent(uname)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

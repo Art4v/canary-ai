@@ -16,7 +16,7 @@ A hackathon project built for UNIHACK 2026.
 | Charts   | Recharts                    |
 | Animation| GSAP                        |
 | Async IO | aiofiles                    |
-| Auth     | bcrypt (server-side hashing)|
+| Auth     | bcrypt (server-side hashing) + session tokens |
 | Chatbot  | Anthropic SDK (Claude)      |
 | News AI  | Anthropic SDK (Claude opus-4-6) |
 
@@ -58,13 +58,15 @@ A hackathon project built for UNIHACK 2026.
   - Results are written to `backend/predictions/portfolio.csv`
   - The prediction loop automatically picks up newly added/removed tickers each cycle
   - **Supabase portfolio sync** — before each C++ run, the prediction loop fetches `cash_reserve` and `current_portfolio_value` from the DB to compute dynamic `total_capital` / `investable_capital`, and exports current holdings to `holdings.csv`; after a successful C++ run, `portfolio.csv` trade results are written back to Supabase (holdings upserted, transactions logged, cash reserve and portfolio value updated); falls back to $100M/$90M defaults if Supabase is unavailable
+- **Session token authentication** — in-memory session store (`session_store.py`) with 24-hour TTL; `POST /database/users/login` issues a UUID token, `POST /database/users/logout` invalidates it; `get_current_user` FastAPI dependency reads the `Authorization: Bearer <token>` header and raises 401 if missing/invalid/expired; frontend-facing read/write endpoints are protected (GET by-username, PUT, deposit, withdraw, chat), while list/create/delete and internal prediction endpoints are left unprotected
 - **Supabase database CRUD** — full Create/Read/Update/Delete for 4 tables, addressed by `{username}`. All responses use `{"success": true, "data": ...}` / `{"success": false, "error": "..."}` envelope. Returns 503 when Supabase credentials are not configured.
   - **Users** (`/database/users`)
     - `GET /database/users` — list all users
     - `GET /database/users/{username}` — get a single user
     - `POST /database/users` — create a user (`{"username", "email", "password"}`); the plaintext password is hashed server-side with bcrypt before storage; automatically creates a zeroed-out portfolio row (`cash_reserve: 0`, `total_capital_invested: 0`, `current_portfolio_value: 0`) so every new user has a portfolio from the start
-    - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash and returns user data on success
-    - `PUT /database/users/{username}` — update user fields (all optional: `username`, `email`, `password`, `api_key`, `trading_style`, `notifications`)
+    - `POST /database/users/login` — verify credentials (`{"email", "password"}`); checks the plaintext password against the stored bcrypt hash; on success creates a server-side session and returns `{"user": <user_data>, "token": <session_token>}`
+    - `POST /database/users/logout` — invalidate the caller's session token; reads the `Authorization: Bearer <token>` header and removes the session from the in-memory store; does not require `get_current_user` dependency so expired tokens can still be explicitly deleted; always returns success
+    - `PUT /database/users/{username}` — update user fields (all optional: `username`, `email`, `password`, `api_key`, `trading_style`, `notifications`); **requires auth**
     - `DELETE /database/users/{username}` — delete a user
   - **Portfolios** (`/database/portfolios`)
     - `GET /database/portfolios` — list all portfolios
@@ -128,7 +130,8 @@ A hackathon project built for UNIHACK 2026.
 ### Frontend
 
 - **Landing page** — full-page vertically scrollable tree scene (`/`); top section shows "Canary AI" title and a nest composite image with 3 invisible egg hover zones that reveal cracked canary overlays on hover (Login, Sign Up, Credits) with labels above the top shell piece; middle section is a seamlessly repeating bark texture trunk; bottom section uses pure CSS grass (5-layer SVG bumps tiling horizontally for added depth) with individual grass blade SVGs poking above the section edge for a natural non-flat transition, over a radial-gradient green ground (lighter center, darker edges) with scattered inline SVG flowers (white & pink petals) and rocks for a cartoony nature-scene feel, plus Login/Register buttons; GSAP entrance animations on title, nest, and buttons
-- **Authentication context** — `AuthProvider` wraps the app to supply `user`, `login()`, `logout()`, and `updateUser()` via React context; persists the logged-in user object to `localStorage` so sessions survive page reloads; the landing route is guarded with a `<Navigate>` redirect to `/login` when no user is authenticated
+- **Authentication context** — `AuthProvider` wraps the app to supply `user`, `token`, `login()`, `logout()`, `updateUser()`, and `authFetch()` via React context; persists the logged-in user object and session token to `localStorage` (`canary_user` and `canary_token` keys) so sessions survive page reloads; `login()` expects the new `{ user, token }` response shape from the backend; `logout()` fire-and-forgets `POST /database/users/logout` with the Bearer token, then clears state and localStorage; `authFetch()` wraps native `fetch()` to inject the `Authorization: Bearer <token>` header and handles 401 by clearing localStorage and redirecting to `/`; the dashboard route is guarded with a `<Navigate>` redirect to `/` when no user is authenticated
+- **Logout button** — puffy 3D circle button (`LogoutButton.jsx`) fixed to the top-left corner of the `/app` dashboard; uses the `LogOut` icon from Lucide React; calls `logout()` from AuthContext and navigates to the landing page; styled identically to the auth pages' back button (42px circle, `var(--color-surface)` background, 3px border, 3D box-shadow with hover lift and active press effects; z-index 9999)
 - **Login & Register pages** — separate routes (`/landing/login`, `/landing/register`) with glassmorphic form cards over the animated sky background; puffy 3D inputs and submit buttons; GSAP pop-in card animation; back button (top-left arrow) for navigation; footer links to toggle between login and register; registration creates a real user in Supabase via `POST /database/users` (password hashed server-side with bcrypt); login verifies credentials via `POST /database/users/login`, then stores the returned user data in `AuthContext`; loading states disable the submit button during requests; server errors are displayed inline
 - **Credits page** — glassmorphic card at `/credits` listing the team grouped by role (Frontend, Backend, Artwork) plus a full tech stack table (React, FastAPI, C++17, Supabase, GSAP, Recharts, Anthropic SDK, etc.); back button returns to the landing page; GSAP pop-in animation; scrollable if viewport is short
 - **Theme system** — three modes: `auto`, `night`, and `day`
@@ -194,7 +197,8 @@ unihack-hackathon-submission/
 │   │   └── news_prediction.py     # CLI script + importable helpers — adjusts quant trades via Claude API
 │   ├── .env.example             # Template for required environment variables
 │   ├── .gitignore               # Ignores .env and runtime data directories
-│   ├── dependencies.py          # Supabase client init + FastAPI Depends
+│   ├── session_store.py         # In-memory session store (24h TTL, create/get/delete)
+│   ├── dependencies.py          # Supabase client init + get_current_user auth dependency
 │   ├── main.py                  # FastAPI app with stock tracking, news, prediction, and landing page serving
 │   └── requirements.txt         # Python dependencies (includes aiofiles for async static serving)
 ├── frontend/
@@ -203,7 +207,7 @@ unihack-hackathon-submission/
 │   │   ├── assets/
 │   │   │   ├── chat/          # Chat icon assets (chat_close.png, chat_plus.png)
 │   │   │   └── trades/        # Trades section images (close.png, etc.)
-│   │   ├── components/        # Reusable UI components (GlassCard, CornerLauncher, SnapPreview, SnapSeams)
+│   │   ├── components/        # Reusable UI components (GlassCard, CornerLauncher, LogoutButton, SnapPreview, SnapSeams)
 │   │   ├── contexts/          # React contexts (AuthContext, SnapContext)
 │   │   ├── data/              # Data files
 │   │   ├── features/          # Feature modules

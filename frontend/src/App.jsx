@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext.jsx'
 import SkyBackground from './features/sky/SkyBackground.jsx'
 import ThemeToggle from './components/ThemeToggle.jsx'
+import LogoutButton from './components/LogoutButton.jsx'
 import Dock from './features/dock/Dock.jsx'
 import TradesWindow from './features/window/TradesWindow.jsx'
 import ChatWindow from './features/window/ChatWindow.jsx'
@@ -157,6 +158,7 @@ function App() {
         <>
           <SkyBackground />
           <ThemeToggle />
+          <LogoutButton />
           {/* Cloud-shaped navigation dock — fixed to bottom center of viewport */}
           <Dock openSections={openSections} onNavigate={handleNavigate} />
 

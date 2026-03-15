@@ -38,8 +38,8 @@ const GREETING_MESSAGE = {
  * @returns {JSX.Element}
  */
 export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initialPosition }) {
-  /* Auth context — need the username to send with chat messages */
-  const { user } = useAuth()
+  /* Auth context — need the username and authFetch for authenticated requests */
+  const { user, authFetch } = useAuth()
 
   /* Chat message history — starts with a single bot greeting */
   const [messages, setMessages] = useState([GREETING_MESSAGE])
@@ -102,8 +102,8 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
     setIsLoading(true)
 
     try {
-      /* POST the message to the backend chat endpoint */
-      const res = await fetch('/chat', {
+      /* POST the message to the backend chat endpoint (authenticated) */
+      const res = await authFetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: trimmed, username }),
@@ -167,6 +167,35 @@ export default function ChatWindow({ windowId, onClose, onFocus, zIndex, initial
   }
 
   /**
+<<<<<<< Updated upstream
+=======
+   * handleNewConversation — resets the chat to a fresh greeting and
+   * clears the server-side session via POST /chat/reset.
+   *
+   * Triggered by the "+" button in the input bar.
+   */
+  const handleNewConversation = async () => {
+    /* Reset local state immediately for responsiveness */
+    setMessages([{ ...GREETING_MESSAGE, id: Date.now(), timestamp: Date.now() }])
+    setInputValue('')
+
+    /* Clear the server-side session if we have a username */
+    const username = user?.username
+    if (username) {
+      try {
+        await authFetch('/chat/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username }),
+        })
+      } catch {
+        /* Non-critical — if the reset fails, the next /chat call will still work */
+      }
+    }
+  }
+
+  /**
+>>>>>>> Stashed changes
    * handleKeyDown — sends the message when Enter is pressed without Shift.
    * Shift+Enter allows multi-line input (default textarea behavior if swapped later).
    *

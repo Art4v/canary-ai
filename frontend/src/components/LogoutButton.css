@@ -1,0 +1,44 @@
+/* ── Logout Button ──
+   Fixed puffy 3D circle in the top-left corner of the /app dashboard.
+   Mirrors the .auth-back-btn style from AuthPages.css (42px circle,
+   surface background, 3px border, 3D box-shadow). */
+
+.logout-btn {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 9999;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 3px solid var(--color-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-text);
+  /* 3D puffy effect: bottom shadow + inner highlight */
+  box-shadow:
+    0 4px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s, filter 0.15s, box-shadow 0.15s;
+}
+
+/* Hover — lift up slightly with increased shadow depth */
+.logout-btn:hover {
+  transform: scale(1.08) translateY(-2px);
+  filter: brightness(1.1);
+  box-shadow:
+    0 6px 0 var(--color-border),
+    inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+/* Active — press down for tactile feedback */
+.logout-btn:active {
+  transform: translateY(1px);
+  box-shadow:
+    0 2px 0 var(--color-border),
+    inset 0 2px 4px rgba(255, 255, 255, 0.3);
+}

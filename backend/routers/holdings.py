@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from supabase import Client
 
-from dependencies import get_supabase_client
+from dependencies import get_supabase_client, get_current_user
 from schemas.response import success_response, error_response
 from schemas.holdings import HoldingCreate, HoldingUpdate
 from crud import holdings as crud_holdings
@@ -27,8 +27,12 @@ def list_holdings(db: Client = Depends(get_supabase_client)):
 
 
 @router.get("/{username}")
-def get_holdings(username: str, db: Client = Depends(get_supabase_client)):
-    """Return all holdings for *username*'s portfolio."""
+def get_holdings(
+    username: str,
+    db: Client = Depends(get_supabase_client),
+    _user: dict = Depends(get_current_user),
+):
+    """Return all holdings for *username*'s portfolio. Requires auth."""
     data, err = crud_holdings.get_by_username(db, username)
     if err:
         return JSONResponse(status_code=404, content=error_response(err))

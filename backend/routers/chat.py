@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from supabase import Client
 from anthropic import Anthropic
 
-from dependencies import get_supabase_client
+from dependencies import get_supabase_client, get_current_user
 from schemas.response import success_response, error_response
 from crud import users as crud_users
 from crud import portfolios as crud_portfolios
@@ -245,7 +245,11 @@ async def _auto_untrack_and_maybe_stop(ticker: str) -> None:
 # ---------------------------------------------------------------------------
 
 @router.post("")
-async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
+async def chat(
+    body: ChatMessage,
+    db: Client = Depends(get_supabase_client),
+    _user: dict = Depends(get_current_user),
+):
     """
     Process a single chat message and return the advisor's reply.
 
@@ -641,7 +645,7 @@ async def chat(body: ChatMessage, db: Client = Depends(get_supabase_client)):
 
 
 @router.post("/reset")
-def reset_chat(body: ChatReset):
+def reset_chat(body: ChatReset, _user: dict = Depends(get_current_user)):
     """
     Clear the server-side chat session for a user.
 
