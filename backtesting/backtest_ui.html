@@ -54,8 +54,9 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
   }
-  .market-badge.open  { background: #16523a; color: var(--good); }
+  .market-badge.open   { background: #16523a; color: var(--good); }
   .market-badge.closed { background: #4a1d1d; color: var(--bad); }
+  .market-badge.speed  { background: #3a2e16; color: #f0c040; }
 
   /* Summary card row — one card per headline metric. */
   .summary {
@@ -204,13 +205,24 @@ const MARKET_HOLIDAYS_2026 = [
 /**
  * Compute the simulated NYC time and whether the market is open.
  *
+ * When TIME_SPEED > 1, wall-clock time is multiplied by the speed factor
+ * relative to the run's start time, so the simulated clock advances faster:
+ *   sim_utc = (started_at - rewind_offset) + (wall_elapsed * speed)
+ *
  * @param {number} rewindHours  Hours the clock is rewound (from state).
+ * @param {string} startedAt    ISO timestamp of the run's start (UTC).
+ * @param {number} timeSpeed    Simulation speed multiplier (>=1).
  * @returns {{ nycStr: string, dateStr: string, isOpen: boolean }}
  */
-function getSimulatedNYC(rewindHours) {
-  // Simulated UTC instant = real now minus the rewind offset.
-  const simUtcMs = Date.now() - (rewindHours || 0) * 3600 * 1000;
-  const simDate = new Date(simUtcMs);
+function getSimulatedNYC(rewindHours, startedAt, timeSpeed) {
+  // Simulated UTC instant accounting for speed multiplier.
+  // sim_start is the moment the simulated clock began (run start minus rewind).
+  // Wall elapsed time is scaled by timeSpeed so the clock advances faster.
+  const startedAtMs = new Date(startedAt).getTime();
+  const simStartMs  = startedAtMs - (rewindHours || 0) * 3600 * 1000;
+  const wallElapsed = Date.now() - startedAtMs;
+  const simUtcMs    = simStartMs + wallElapsed * (timeSpeed || 1);
+  const simDate     = new Date(simUtcMs);
 
   // Format in America/New_York timezone.
   const nycStr = simDate.toLocaleString('en-US', {
@@ -257,12 +269,22 @@ function getSimulatedNYC(rewindHours) {
  */
 function renderClock(s) {
   const bar = document.getElementById('clock-bar');
-  const { nycStr, dateStr, isOpen } = getSimulatedNYC(s.rewind_hours);
+  const { nycStr, dateStr, isOpen } = getSimulatedNYC(
+    s.rewind_hours, s.started_at, s.time_speed
+  );
   const badgeCls = isOpen ? 'open' : 'closed';
   const badgeText = isOpen ? 'Market Open' : 'Market Closed';
+
+  // Show a speed badge when running faster than real-time.
+  const speed = s.time_speed || 1;
+  const speedBadge = speed > 1
+    ? `<span class="market-badge speed">${speed}x Speed</span>`
+    : '';
+
   bar.innerHTML =
     `<span class="time">${nycStr}</span>` +
     `<span class="date">${dateStr} (NYC)</span>` +
+    speedBadge +
     `<span class="market-badge ${badgeCls}">${badgeText}</span>`;
 }
 

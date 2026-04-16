@@ -32,7 +32,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from dotenv import load_dotenv
@@ -91,6 +91,19 @@ try:
 except ValueError:
     REWIND_HOURS = 0.0
 
+# TIME_SPEED — simulation speed multiplier (rewind mode only).
+#   1  → real-time replay (default), 10 → 10x faster, etc.
+#   Ignored in live mode so the cycle cadence stays locked to 60 s.
+try:
+    _raw_speed = float(os.environ.get("TIME_SPEED", "1"))
+    TIME_SPEED = max(1.0, _raw_speed)  # clamp: must be at least 1x
+except ValueError:
+    TIME_SPEED = 1.0
+
+# In live mode, force 1x regardless of what .env says.
+if REWIND_HOURS <= 0:
+    TIME_SPEED = 1.0
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -136,6 +149,7 @@ state = {
     "trades_skipped": 0,
     "cycles":         0,
     "rewind_hours":   REWIND_HOURS,
+    "time_speed":     TIME_SPEED,
     "nav_history":    [],
     "started_at":     None,
     "last_cycle_at":  None,
@@ -577,7 +591,8 @@ def spawn_data_py() -> subprocess.Popen:
     thread — the prefix `[data]` makes them easy to distinguish from the
     backtester's own messages.
     """
-    log.info("Launching data.py subprocess (REWIND_HOURS=%.2f)", REWIND_HOURS)
+    log.info("Launching data.py subprocess (REWIND_HOURS=%.2f, TIME_SPEED=%.0fx)",
+             REWIND_HOURS, TIME_SPEED)
     proc = subprocess.Popen(
         [sys.executable, "-u", DATA_PY],
         cwd=BACKTEST_DIR,
@@ -680,7 +695,14 @@ def main() -> None:
 
     try:
         wait_for_data()
-        log.info("Simulation loop started — cycle interval %ds", CYCLE_SECONDS)
+        log.info("Simulation loop started — cycle interval %.1fs (%.0fx speed)",
+                 CYCLE_SECONDS / TIME_SPEED, TIME_SPEED)
+
+        # Track the simulated clock so we know when rewind catches up to
+        # real time and we should transition to live-speed cycling.
+        sim_clock = datetime.now(timezone.utc) - timedelta(hours=REWIND_HOURS)
+        live_mode_reached = False
+
         while True:
             t0 = time.time()
             try:
@@ -688,10 +710,31 @@ def main() -> None:
             except Exception:
                 log.exception("cycle failed")
 
-            # Pace ourselves to exactly CYCLE_SECONDS wall clock per cycle.
-            # `data.py` also sleeps 60s, so we stay aligned with its writes.
-            elapsed = time.time() - t0
-            sleep_for = max(1.0, CYCLE_SECONDS - elapsed)
+            # Advance our local sim clock by one cycle (1 simulated minute).
+            if not live_mode_reached:
+                sim_clock += timedelta(seconds=CYCLE_SECONDS)
+
+                # Check if the simulated clock has caught up to real time.
+                if sim_clock >= datetime.now(timezone.utc):
+                    live_mode_reached = True
+                    log.info(
+                        "Simulated time has caught up to real time — "
+                        "switching to live-speed cycling (60 s)"
+                    )
+                    # Update state so the UI clock switches to real-time
+                    # display and the speed badge disappears.
+                    with state_lock:
+                        state["rewind_hours"] = 0
+                        state["time_speed"]   = 1
+                    save_state()
+
+            # In rewind mode, divide by TIME_SPEED so cycles run faster
+            # (e.g. 10x → ~6 s per cycle). Once we transition to live mode,
+            # revert to the full CYCLE_SECONDS cadence.
+            if live_mode_reached:
+                sleep_for = max(1.0, CYCLE_SECONDS - (time.time() - t0))
+            else:
+                sleep_for = max(0.5, (CYCLE_SECONDS / TIME_SPEED) - (time.time() - t0))
             time.sleep(sleep_for)
 
     except KeyboardInterrupt:

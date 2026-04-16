@@ -71,6 +71,19 @@ try:
 except ValueError:
     REWIND_HOURS = 0.0  # fall back to live mode if the value is malformed
 
+# TIME_SPEED — simulation speed multiplier (rewind mode only).
+#   1  → real-time replay (default), 10 → 10x faster, etc.
+#   Ignored in live mode so the poll cadence stays locked to 60 s.
+try:
+    _raw_speed = float(os.environ.get("TIME_SPEED", "1"))
+    TIME_SPEED = max(1.0, _raw_speed)  # clamp: must be at least 1x
+except ValueError:
+    TIME_SPEED = 1.0
+
+# In live mode, force 1x regardless of what .env says.
+if REWIND_HOURS <= 0:
+    TIME_SPEED = 1.0
+
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
@@ -297,8 +310,8 @@ def main() -> None:
         # Use UTC throughout so yfinance comparisons are timezone-consistent.
         sim_time = datetime.now(tz=timezone.utc) - timedelta(hours=REWIND_HOURS)
         log.info(
-            "REWIND MODE — simulated start time: %s UTC  (%.1f hours ago)",
-            sim_time.strftime("%Y-%m-%d %H:%M"), REWIND_HOURS
+            "REWIND MODE — simulated start time: %s UTC  (%.1f hours ago)  speed: %.0fx",
+            sim_time.strftime("%Y-%m-%d %H:%M"), REWIND_HOURS, TIME_SPEED
         )
     else:
         sim_time = None  # unused in live mode
@@ -341,11 +354,27 @@ def main() -> None:
         if sim_time is not None:
             sim_time += timedelta(seconds=INTERVAL_SECONDS)
 
+            # If the simulated clock has caught up to (or passed) real time,
+            # switch to live mode so we start fetching real-time bars instead
+            # of requesting future timestamps that yfinance can't fulfil.
+            if sim_time >= datetime.now(tz=timezone.utc):
+                log.info(
+                    "Simulated time has caught up to real time — "
+                    "switching to LIVE MODE"
+                )
+                sim_time = None
+
         # Sleep until the next polling interval.
-        # INTERVAL_SECONDS is 60 — matching the "1m" yfinance bar width so
-        # live mode never duplicates or skips a bar.
-        log.info("Sleeping %d s until next poll…", INTERVAL_SECONDS)
-        time.sleep(INTERVAL_SECONDS)
+        # In rewind mode, divide by TIME_SPEED so simulated minutes elapse
+        # faster in wall-clock time (e.g. 10x → 6 s sleep instead of 60 s).
+        # Once we transition to live mode, revert to the full 60 s cadence
+        # so we stay locked to the "1m" yfinance bar width.
+        if sim_time is not None:
+            sleep_secs = INTERVAL_SECONDS / TIME_SPEED
+        else:
+            sleep_secs = INTERVAL_SECONDS
+        log.info("Sleeping %.1f s until next poll…", sleep_secs)
+        time.sleep(sleep_secs)
 
 
 if __name__ == "__main__":
