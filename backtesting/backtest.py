@@ -125,6 +125,8 @@ state_lock = threading.Lock()
 #   last_cycle_at     — ISO timestamp of the most recent cycle (UTC)
 #   rewind_hours      — hours the clock is rewound (from .env), exposed so
 #                        the UI can compute simulated NYC time
+#   nav_history       — list of {ts, nav} snapshots recorded each cycle,
+#                        used by the UI to draw the portfolio value chart
 state = {
     "cash":           INITIAL_CASH,
     "nav":            INITIAL_CASH,
@@ -134,6 +136,7 @@ state = {
     "trades_skipped": 0,
     "cycles":         0,
     "rewind_hours":   REWIND_HOURS,
+    "nav_history":    [],
     "started_at":     None,
     "last_cycle_at":  None,
 }
@@ -477,6 +480,12 @@ def execute_cycle() -> None:
         # cycles and the predictor sees an up-to-date number next time.
         state["nav"] = state["cash"] + _mark_to_market_locked()
 
+        # Record the NAV snapshot for the portfolio-value chart in the UI.
+        state["nav_history"].append({
+            "ts":  now_iso,
+            "nav": round(state["nav"], 2),
+        })
+
         # holdings.csv must be rewritten inside the lock so the on-disk
         # view is always consistent with `state["holdings"]`.
         write_holdings_csv()
@@ -660,6 +669,7 @@ def main() -> None:
     state["trades"]         = []
     state["trades_skipped"] = 0
     state["cycles"]         = 0
+    state["nav_history"]    = []
     state["last_cycle_at"]  = None
 
     state["started_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")

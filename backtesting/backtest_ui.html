@@ -104,6 +104,27 @@
   .buy  { color: var(--good); }
   .sell { color: var(--bad); }
   .empty { color: var(--dim); text-align: center; padding: 16px; }
+
+  /* Portfolio value chart container. */
+  .chart-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px 8px 14px;
+    margin-bottom: 4px;
+    position: relative;
+  }
+  .chart-wrap canvas {
+    width: 100%;
+    height: 220px;
+    display: block;
+  }
+  .chart-empty {
+    color: var(--dim);
+    text-align: center;
+    padding: 40px 0;
+    font-size: 12px;
+  }
 </style>
 </head>
 <body>
@@ -112,6 +133,11 @@
   <div class="status" id="status">connecting…</div>
 
   <div class="summary" id="summary"></div>
+
+  <h2>Portfolio Value</h2>
+  <div class="chart-wrap" id="chart-wrap">
+    <canvas id="nav-chart"></canvas>
+  </div>
 
   <h2>Holdings</h2>
   <table id="holdings-table">
@@ -253,6 +279,211 @@ function coloredUsd(n) {
   return `<span class="${cls}">${sign}${fmtUsd(n)}</span>`;
 }
 
+// -----------------------------------------------------------------------
+// Portfolio value line chart — pure canvas, no libraries.
+//
+// Draws a line graph of NAV over time. The line and fill are green when
+// NAV >= initial_cash (net gain) and red when NAV < initial_cash (net
+// loss). Segments that cross the breakeven line transition colour at the
+// exact crossing point so the chart is always accurately coloured.
+// -----------------------------------------------------------------------
+
+/**
+ * Draw the NAV chart onto the #nav-chart canvas.
+ *
+ * @param {object} s  Full state from /api/state. Uses s.nav_history
+ *                     (array of {ts, nav}), s.initial_cash, and s.nav.
+ */
+function renderChart(s) {
+  const wrap = document.getElementById('chart-wrap');
+  const canvas = document.getElementById('nav-chart');
+  const history = s.nav_history || [];
+
+  // Need at least 2 points to draw a line.
+  if (history.length < 2) {
+    canvas.style.display = 'none';
+    // Show a placeholder message when there's no data yet.
+    let placeholder = wrap.querySelector('.chart-empty');
+    if (!placeholder) {
+      placeholder = document.createElement('div');
+      placeholder.className = 'chart-empty';
+      placeholder.textContent = 'waiting for data…';
+      wrap.appendChild(placeholder);
+    }
+    return;
+  }
+
+  // Remove placeholder if it was showing.
+  const placeholder = wrap.querySelector('.chart-empty');
+  if (placeholder) placeholder.remove();
+  canvas.style.display = 'block';
+
+  // Size the canvas to its CSS layout size at 2x for retina sharpness.
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width  = rect.width  * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  // Layout constants — leave room for Y-axis labels on the left and
+  // time labels on the bottom.
+  const padL = 70, padR = 16, padT = 16, padB = 28;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  // Extract NAV values and compute data range.
+  const navs = history.map(h => h.nav);
+  const baseline = s.initial_cash || navs[0];
+  const minNav = Math.min(...navs, baseline);
+  const maxNav = Math.max(...navs, baseline);
+  // Add 2% padding above and below so the line doesn't hug the edges.
+  const range = (maxNav - minNav) || 1;
+  const yMin = minNav - range * 0.02;
+  const yMax = maxNav + range * 0.02;
+
+  // Map data index → canvas X, NAV value → canvas Y.
+  const xOf = i => padL + (i / (navs.length - 1)) * plotW;
+  const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * plotH;
+
+  // Colours matching the existing CSS variables.
+  const GREEN = '#4ade80';
+  const RED   = '#f87171';
+  const GREEN_FILL = 'rgba(74,222,128,0.12)';
+  const RED_FILL   = 'rgba(248,113,113,0.12)';
+  const DIM   = '#8a8f99';
+
+  // Clear canvas.
+  ctx.clearRect(0, 0, W, H);
+
+  // ---- Draw the breakeven (initial cash) reference line ---------------
+  const baseY = yOf(baseline);
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = DIM;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, baseY);
+  ctx.lineTo(padL + plotW, baseY);
+  ctx.stroke();
+  ctx.restore();
+
+  // ---- Build segments split by gain/loss at the breakeven crossing ----
+  // Each segment is an array of {x, y} points that are entirely above or
+  // entirely below the baseline. When the line crosses the baseline we
+  // interpolate the exact crossing point and start a new segment.
+
+  const segments = []; // [{points: [{x,y}], gain: bool}]
+  let cur = null;
+
+  for (let i = 0; i < navs.length; i++) {
+    const x = xOf(i);
+    const y = yOf(navs[i]);
+    const gain = navs[i] >= baseline;
+
+    if (i === 0) {
+      cur = { points: [{x, y}], gain };
+      continue;
+    }
+
+    const prevGain = navs[i - 1] >= baseline;
+
+    // If the gain/loss status changed, find the crossing point.
+    if (gain !== prevGain) {
+      const px = xOf(i - 1);
+      const py = yOf(navs[i - 1]);
+      // Linear interpolation: find t where the line crosses baseline.
+      const t = (baseline - navs[i - 1]) / (navs[i] - navs[i - 1]);
+      const cx = px + t * (x - px);
+      const cy = yOf(baseline);
+
+      // Close the current segment at the crossing.
+      cur.points.push({x: cx, y: cy});
+      segments.push(cur);
+
+      // Start a new segment from the crossing.
+      cur = { points: [{x: cx, y: cy}, {x, y}], gain };
+    } else {
+      cur.points.push({x, y});
+    }
+  }
+  if (cur && cur.points.length > 0) segments.push(cur);
+
+  // ---- Draw each segment (filled area + line) -------------------------
+  for (const seg of segments) {
+    const pts = seg.points;
+    if (pts.length < 2) continue;
+    const lineColor = seg.gain ? GREEN : RED;
+    const fillColor = seg.gain ? GREEN_FILL : RED_FILL;
+
+    // Filled area between the line and the baseline.
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, baseY);
+    for (const p of pts) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(pts[pts.length - 1].x, baseY);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    // The line itself.
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // ---- Y-axis labels (5 evenly spaced ticks) --------------------------
+  ctx.fillStyle = DIM;
+  ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i++) {
+    const v = yMin + (i / yTicks) * (yMax - yMin);
+    const y = yOf(v);
+    ctx.fillText('$' + v.toFixed(2), padL - 6, y);
+    // Faint grid line.
+    ctx.save();
+    ctx.strokeStyle = 'rgba(138,143,153,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + plotW, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- X-axis time labels (up to 6 evenly spaced) ---------------------
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const xLabels = Math.min(6, history.length);
+  for (let i = 0; i < xLabels; i++) {
+    const idx = Math.round(i * (history.length - 1) / (xLabels - 1));
+    const x = xOf(idx);
+    // Format the timestamp to a short NYC time string.
+    let label = '';
+    try {
+      const d = new Date(history[idx].ts);
+      label = d.toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit', minute: '2-digit',
+        hour12: true,
+      });
+    } catch { label = String(idx); }
+    ctx.fillText(label, x, padT + plotH + 6);
+  }
+
+  // ---- Baseline label ---------------------------------------------------
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle = DIM;
+  ctx.fillText('initial: $' + baseline.toFixed(2), padL + 4, baseY - 3);
+}
+
 function renderSummary(s) {
   // Total P&L = NAV - starting cash. That's the only "how are we doing"
   // number that matters.
@@ -344,6 +575,7 @@ async function tick() {
     const s = await r.json();
     renderClock(s);
     renderSummary(s);
+    renderChart(s);
     renderHoldings(s);
     renderTrades(s);
     const last = s.last_cycle_at || s.started_at || '(not yet)';

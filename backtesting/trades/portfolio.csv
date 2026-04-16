@@ -1,0 +1,6 @@
+ticker,action,amount_of_shares,total_change
+AAPL,sell,2,-529.98
+TSLA,hold,0,0.00
+JPM,hold,0,0.00
+PLTR,buy,2,283.99
+CASH_RESERVE,summary,0,298.66
