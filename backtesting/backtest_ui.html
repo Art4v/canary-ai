@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Backtest Live View</title>
+<style>
+  /* ------------------------------------------------------------- */
+  /* Barebones dark theme — no frameworks, one file, no build step. */
+  /* ------------------------------------------------------------- */
+  :root {
+    --bg:        #0e0f12;
+    --panel:     #16181d;
+    --border:    #262930;
+    --text:      #e6e8eb;
+    --dim:       #8a8f99;
+    --accent:    #4ea1ff;
+    --good:      #4ade80;
+    --bad:       #f87171;
+    --warn:      #facc15;
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    margin: 0;
+    padding: 16px 20px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 13px; font-weight: 600;
+    margin: 20px 0 6px 0;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  /* Top-of-page status line (last update / cycle count). */
+  .status { color: var(--dim); font-size: 11px; margin-bottom: 16px; }
+
+  /* Simulated clock & market status bar. */
+  .clock-bar {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .clock-bar .time { font-size: 18px; font-weight: 700; }
+  .clock-bar .date { color: var(--dim); }
+  .market-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .market-badge.open  { background: #16523a; color: var(--good); }
+  .market-badge.closed { background: #4a1d1d; color: var(--bad); }
+
+  /* Summary card row — one card per headline metric. */
+  .summary {
+    display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    min-width: 160px;
+  }
+  .card .label { color: var(--dim); font-size: 11px; text-transform: uppercase; }
+  .card .value { font-size: 18px; margin-top: 4px; }
+
+  /* Holdings and trade tables share the same look. */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  th {
+    background: #1b1e24;
+    color: var(--dim);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* P&L coloring helpers — JS writes .pos / .neg class based on sign. */
+  .pos { color: var(--good); }
+  .neg { color: var(--bad); }
+  .dim { color: var(--dim); }
+  .buy  { color: var(--good); }
+  .sell { color: var(--bad); }
+  .empty { color: var(--dim); text-align: center; padding: 16px; }
+</style>
+</head>
+<body>
+  <h1>Backtest Live View</h1>
+  <div class="clock-bar" id="clock-bar"></div>
+  <div class="status" id="status">connecting…</div>
+
+  <div class="summary" id="summary"></div>
+
+  <h2>Holdings</h2>
+  <table id="holdings-table">
+    <thead>
+      <tr>
+        <th>Ticker</th>
+        <th>Shares</th>
+        <th>Avg Buy</th>
+        <th>Last Price</th>
+        <th>Market Value</th>
+        <th>Unrealised P&amp;L</th>
+      </tr>
+    </thead>
+    <tbody id="holdings-body"></tbody>
+  </table>
+
+  <h2>Trade History (most recent first)</h2>
+  <table id="trades-table">
+    <thead>
+      <tr>
+        <th>Time (NYC)</th>
+        <th>Ticker</th>
+        <th>Side</th>
+        <th>Shares</th>
+        <th>Price</th>
+        <th>Notional</th>
+        <th>Fee</th>
+        <th>Realised P&amp;L</th>
+        <th>Cash After</th>
+      </tr>
+    </thead>
+    <tbody id="trades-body"></tbody>
+  </table>
+
+<script>
+// -----------------------------------------------------------------------
+// Simple polling client. Fetches /api/state every 2s and re-renders the
+// whole view. No framework, no diffing — tables are small (<100 rows).
+// -----------------------------------------------------------------------
+
+// -----------------------------------------------------------------------
+// Simulated NYC clock & market-open/closed logic.
+//
+// The backtester rewinds the real clock by REWIND_HOURS. The simulated
+// "now" = real UTC now − rewind_hours. We convert that to America/New_York
+// and check whether it falls inside regular NYSE trading hours
+// (09:30 – 16:00 ET, Mon–Fri, ignoring holidays).
+// -----------------------------------------------------------------------
+
+// US market holidays for the current year (NYSE / NASDAQ). Only major
+// closures are listed — early closes are treated as open for simplicity.
+const MARKET_HOLIDAYS_2026 = [
+  '2026-01-01', // New Year's Day
+  '2026-01-19', // MLK Day
+  '2026-02-16', // Presidents' Day
+  '2026-04-03', // Good Friday
+  '2026-05-25', // Memorial Day
+  '2026-07-03', // Independence Day (observed)
+  '2026-09-07', // Labor Day
+  '2026-11-26', // Thanksgiving
+  '2026-12-25', // Christmas
+];
+
+/**
+ * Compute the simulated NYC time and whether the market is open.
+ *
+ * @param {number} rewindHours  Hours the clock is rewound (from state).
+ * @returns {{ nycStr: string, dateStr: string, isOpen: boolean }}
+ */
+function getSimulatedNYC(rewindHours) {
+  // Simulated UTC instant = real now minus the rewind offset.
+  const simUtcMs = Date.now() - (rewindHours || 0) * 3600 * 1000;
+  const simDate = new Date(simUtcMs);
+
+  // Format in America/New_York timezone.
+  const nycStr = simDate.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: true,
+  });
+  const dateStr = simDate.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  });
+
+  // Extract NYC hour/minute and day-of-week for market-hours check.
+  // We create a Date whose UTC fields represent the NYC wall-clock values
+  // so we can use getUTC* methods to read them without locale ambiguity.
+  const nycParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(simDate);
+
+  const p = {};
+  for (const {type, value} of nycParts) p[type] = value;
+
+  const hhmm = parseInt(p.hour) * 100 + parseInt(p.minute); // e.g. 930, 1600
+  const nycDateObj = new Date(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`);
+  const dow = nycDateObj.getDay(); // 0=Sun, 6=Sat
+  const isoDate = `${p.year}-${p.month}-${p.day}`;
+
+  // Market is open Mon–Fri, 09:30–16:00 ET, excluding holidays.
+  const isWeekday = dow >= 1 && dow <= 5;
+  const inHours = hhmm >= 930 && hhmm < 1600;
+  const isHoliday = MARKET_HOLIDAYS_2026.includes(isoDate);
+  const isOpen = isWeekday && inHours && !isHoliday;
+
+  return { nycStr, dateStr, isOpen };
+}
+
+/**
+ * Render the clock bar (simulated NYC time + market open/closed badge).
+ *
+ * @param {object} s  The full state object from /api/state.
+ */
+function renderClock(s) {
+  const bar = document.getElementById('clock-bar');
+  const { nycStr, dateStr, isOpen } = getSimulatedNYC(s.rewind_hours);
+  const badgeCls = isOpen ? 'open' : 'closed';
+  const badgeText = isOpen ? 'Market Open' : 'Market Closed';
+  bar.innerHTML =
+    `<span class="time">${nycStr}</span>` +
+    `<span class="date">${dateStr} (NYC)</span>` +
+    `<span class="market-badge ${badgeCls}">${badgeText}</span>`;
+}
+
+const fmtUsd = n =>
+  '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const fmtPrice = n =>
+  Number(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 4});
+const fmtInt = n => Number(n).toLocaleString('en-US');
+
+// Wrap a number in a <span class="pos|neg"> for sign coloring.
+function coloredUsd(n) {
+  const cls = n > 0 ? 'pos' : (n < 0 ? 'neg' : 'dim');
+  const sign = n > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${fmtUsd(n)}</span>`;
+}
+
+function renderSummary(s) {
+  // Total P&L = NAV - starting cash. That's the only "how are we doing"
+  // number that matters.
+  const pnl = (s.nav ?? 0) - (s.initial_cash ?? 0);
+  const pnlPct = (s.initial_cash > 0) ? (pnl / s.initial_cash * 100) : 0;
+
+  const cards = [
+    ['NAV',            fmtUsd(s.nav ?? 0)],
+    ['Cash',           fmtUsd(s.cash ?? 0)],
+    ['Total P&L',      coloredUsd(pnl) + ` <span class="dim">(${pnlPct.toFixed(3)}%)</span>`],
+    ['Positions',      fmtInt(Object.keys(s.holdings || {}).length)],
+    ['Trades Exec',    fmtInt((s.trades || []).length)],
+    ['Sells Skipped',  fmtInt(s.trades_skipped ?? 0)],
+    ['Cycles',         fmtInt(s.cycles ?? 0)],
+  ];
+
+  document.getElementById('summary').innerHTML = cards.map(([label, value]) =>
+    `<div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>`
+  ).join('');
+}
+
+function renderHoldings(s) {
+  const body = document.getElementById('holdings-body');
+  const holdings = s.holdings || {};
+  const entries = Object.entries(holdings);
+
+  if (entries.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">no open positions</td></tr>`;
+    return;
+  }
+
+  // Sort by market value descending — largest positions at the top.
+  entries.sort((a, b) => (b[1].market_value || 0) - (a[1].market_value || 0));
+
+  body.innerHTML = entries.map(([ticker, h]) => `
+    <tr>
+      <td>${ticker}</td>
+      <td>${fmtInt(h.shares)}</td>
+      <td>${fmtPrice(h.avg_buy)}</td>
+      <td>${fmtPrice(h.last_price ?? h.avg_buy)}</td>
+      <td>${fmtUsd(h.market_value ?? 0)}</td>
+      <td>${coloredUsd(h.unrealized_pnl ?? 0)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderTrades(s) {
+  const body = document.getElementById('trades-body');
+  const trades = (s.trades || []).slice().reverse().slice(0, 100);
+
+  if (trades.length === 0) {
+    body.innerHTML = `<tr><td colspan="9" class="empty">no trades yet</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = trades.map(t => {
+    // Convert the UTC trade timestamp to NYC for display consistency.
+    let ts = t.ts || '';
+    try {
+      const d = new Date(ts);
+      ts = d.toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+      });
+    } catch { /* fall back to raw string */ }
+    const sideCls = t.side === 'buy' ? 'buy' : 'sell';
+    return `
+      <tr>
+        <td>${ts}</td>
+        <td>${t.ticker}</td>
+        <td class="${sideCls}">${(t.side || '').toUpperCase()}</td>
+        <td>${fmtInt(t.shares)}</td>
+        <td>${fmtPrice(t.price)}</td>
+        <td>${fmtUsd(t.notional ?? 0)}</td>
+        <td>${fmtUsd(t.fee ?? 0)}</td>
+        <td>${t.side === 'sell' ? coloredUsd(t.pnl_realized ?? 0) : '<span class="dim">—</span>'}</td>
+        <td>${fmtUsd(t.cash_after ?? 0)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function tick() {
+  try {
+    const r = await fetch('/api/state', {cache: 'no-store'});
+    if (!r.ok) throw new Error('http ' + r.status);
+    const s = await r.json();
+    renderClock(s);
+    renderSummary(s);
+    renderHoldings(s);
+    renderTrades(s);
+    const last = s.last_cycle_at || s.started_at || '(not yet)';
+    document.getElementById('status').textContent =
+      `last cycle: ${last}  |  started: ${s.started_at || '—'}`;
+  } catch (e) {
+    document.getElementById('status').textContent = 'connection error: ' + e.message;
+  }
+}
+
+// Poll every 2s. First tick fires immediately on load.
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

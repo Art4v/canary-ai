@@ -160,6 +160,16 @@ Canary AI is an AI-powered stock portfolio manager that tracks live market data,
 - **Help window** — opened/closed by the Help (?) dock button and corner launchers; displays an 8-section step-by-step user guide covering Getting Started, Desktop Navigation, Chat, Portfolio, Trades, Settings, Window Management, and Theme; purple-themed using `--color-help-*` tokens with pill-shaped step number badges; wraps the generic Window shell (`HelpWindow.jsx / .css`)
 - **Modular feature folders** — scaffolded directories for `dock`, `portfolio`, `sky`, and `window` features
 
+### Backtesting
+
+- **Standalone backtester** (`backtesting/`) — simulates the prediction module against historical minute-level data while markets are closed; starting cash and ticker universe are configurable via `.env`
+  - `data.py` — yfinance poller that writes per-ticker CSVs to `backtesting/data/`; supports live mode and rewind mode (`REWIND_HOURS > 0` in `.env` replays real historical minute bars, advancing a simulated clock by 1 minute per 60-second poll); ticker list is read from `TICKERS` in `.env`
+  - `prediction.exe` — the C++17 Modern Portfolio Theory optimizer copied from `backend/prediction/`; CLI: `prediction.exe <data_dir> <output_dir> <total_capital> <investable_capital> <TICKER1> [TICKER2] ...`
+  - `backtest.py` — single-entrypoint backtester that (1) **resets all state on every run** (deletes `state.json`, wipes `data/` CSVs, and clears `trades/` so every invocation starts fresh), (2) launches `data.py` as a subprocess, (3) every 60 seconds marks holdings to market and invokes `prediction.exe` with the current NAV, (4) applies a `max($5, 1.5% × trade notional)` transaction fee and a profitability gate (sells execute only if `(sell_price − avg_buy_price) × shares − fee > 0`, buys always execute when cash permits), (5) maintains portfolio state (cash, holdings with weighted-average cost basis, trade log, skipped-unprofitable counter) persisted to `state.json`, and (6) rewrites `trades/holdings.csv` each cycle so `prediction.exe` stays in lockstep with gated executions
+  - **`.env` configuration** — `REWIND_HOURS` (required > 0), `INITIAL_CASH` (starting portfolio balance, default $1,000), `TICKERS` (comma-separated ticker list, default `AAPL,TSLA,JPM,PLTR,CELS`); both `data.py` and `backtest.py` read `TICKERS` from the same `.env` file
+  - **Live HTML dashboard** — `backtest.py` serves `backtest_ui.html` at `http://localhost:8787/` while running; vanilla-JS page polls `/api/state` every 2 seconds and renders a **simulated NYC clock** with a market-open/closed badge (based on NYSE hours 09:30–16:00 ET, Mon–Fri, excluding holidays), headline cards (NAV, cash, total P&L, positions, executed/skipped counts, cycles), a holdings table (ticker, shares, avg buy, last price, market value, unrealised P&L), and a reverse-chronological trade history with NYC-converted timestamps — accessible from any browser with no build step
+  - Run with: `cd backtesting && python backtest.py` (requires `REWIND_HOURS > 0` in `backtesting/.env`); Ctrl+C gracefully terminates the `data.py` child and saves the final `state.json`
+
 ## Project Structure
 
 ```
@@ -243,6 +253,16 @@ unihack-hackathon-submission/
 │   ├── index.html             # HTML shell
 │   ├── package.json
 │   └── vite.config.js         # Vite config with @ alias and base: '/landing/'
+├── backtesting/
+│   ├── data.py                # yfinance poller (live + rewind modes) writing per-ticker CSVs
+│   ├── backtest.py            # Backtester — launches data.py, runs prediction.exe each cycle, gates trades with fees, serves HTTP UI
+│   ├── backtest_ui.html       # Barebones live dashboard (HTML + vanilla JS, polls /api/state every 2s)
+│   ├── prediction.cpp         # C++17 MPT optimizer (copy of backend/prediction/prediction.cpp)
+│   ├── prediction.exe         # Pre-compiled Windows binary
+│   ├── data/                  # Per-ticker CSVs written by data.py (wiped on each run)
+│   ├── trades/                # prediction.exe output (holdings.csv, portfolio.csv) — wiped on each run
+│   ├── state.json             # Backtester's persisted portfolio/holdings/trade history (auto-generated)
+│   └── .env.example           # REWIND_HOURS, INITIAL_CASH, TICKERS template
 ├── planning/
 │   └── sms-notifications.md   # Two-way SMS feature plan (Twilio)
 ├── .gitignore                 # Root gitignore (chatbot secrets & runtime data)

@@ -1,5 +1,5 @@
 """
-app.py — Continuous minute-level stock data puller.
+data.py — Continuous minute-level stock data puller.
 
 Polls yfinance every 60 seconds for a fixed set of tickers and appends
 the latest 1-minute bar to a per-ticker CSV file in the `data/` directory.
@@ -14,7 +14,7 @@ Time-rewind mode (set REWIND_HOURS in .env):
     while markets are closed.
 
 Run with:
-    python app.py
+    python data.py
 
 Press Ctrl+C to stop.
 """
@@ -41,10 +41,15 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Tickers to track. BOBS, KOD, ZIMV are thinly traded / OTC — if yfinance
-# returns no data for them in a given minute the script logs a warning and
-# moves on without crashing.
-TICKERS = ["AAPL", "TSLA", "BOBS", "JPM", "PLTR", "CELS", "KOD", "ZIMV"]
+# Tickers to track — read from .env as a comma-separated list so both
+# data.py and backtest.py share the same source of truth. Thinly traded /
+# OTC symbols are fine: if yfinance returns no data for them in a given
+# minute the script logs a warning and moves on without crashing.
+TICKERS = [
+    t.strip()
+    for t in os.environ.get("TICKERS", "AAPL,TSLA,JPM,PLTR,CELS").split(",")
+    if t.strip()
+]
 
 # Directory (relative to this script) where CSV files are written.
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -86,7 +91,7 @@ def clear_data_dir() -> None:
     """
     Delete all existing CSV files in DATA_DIR at startup.
 
-    This ensures each run of app.py starts with a clean slate — no stale
+    This ensures each run of data.py starts with a clean slate — no stale
     rows from a previous session can contaminate prediction.cpp's input.
     Only *.csv files are removed; other files (if any) are left untouched.
     """
